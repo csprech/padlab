@@ -12,6 +12,16 @@ The look is modelled on a classic 90s hardware sampler, with no third-party logo
 - Rubber key caps with red/green LEDs and knurled Q-Link knobs.
 - A backlit green dot-matrix LCD with pixel grid, vignette and glass sheen. Everything on the screen is drawn in one ink colour using VT323 (SIL Open Font License, `assets/fonts/VT323-OFL.txt`).
 
+Pads, key caps, knobs, LEDs, screws and paint grain are rendered by `src/ui/Materials.cpp`. It's a small per-pixel shader that describes each part as a height field and lights it with one top-left key light (Lambert diffuse plus Blinn-Phong specular, micro-bump grain). Results are cached at device-pixel resolution.
+
+UI performance:
+- The static chassis is rendered once per window size.
+- The LCD content and its ink shadow are cached together, and rebuilt only when the screen's content changes.
+- The playhead and meters live on a lightweight overlay.
+- Pads repaint individually.
+
+Release build CPU: about 2% idle and about 19% while playing, mostly the pad hit animation.
+
 ## Build & run
 
 ```sh

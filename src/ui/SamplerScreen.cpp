@@ -11,7 +11,12 @@ public:
     {
         levels[0] = juce::jmax (l, levels[0] * 0.85f);
         levels[1] = juce::jmax (r, levels[1] * 0.85f);
-        repaint();
+        const int sig = (int) (levels[0] * 60.0f) * 100 + (int) (levels[1] * 60.0f);
+        if (sig != lastSig)
+        {
+            lastSig = sig;
+            repaint();
+        }
     }
     void setThreshold (float gain) { threshold = gain; }
     void paint (juce::Graphics& g) override
@@ -39,6 +44,7 @@ public:
 private:
     std::array<float, 2> levels {};
     float threshold = 0.0f;
+    int lastSig = -1;
 };
 
 class SamplerScreen : public Screen

@@ -27,6 +27,7 @@ set(PADLAB_JUCE_DEFS
   JUCE_USE_CURL=0
   JUCE_DISPLAY_SPLASH_SCREEN=0
   JUCE_USE_MP3AUDIOFORMAT=0
+  JUCE_COREGRAPHICS_RENDER_WITH_MULTIPLE_PAINT_CALLS=1
 )
 
 option(PADLAB_BUILD_APP "Build the GUI app" ON)
@@ -46,6 +47,7 @@ target_sources(Padlab PRIVATE
   ${PADLAB_CORE_SOURCES}
   src/engine/Engine.cpp
   src/ui/Theme.cpp
+  src/ui/Materials.cpp
   src/ui/PadGrid.cpp
   src/ui/Screens.cpp
   src/ui/MainScreen.cpp

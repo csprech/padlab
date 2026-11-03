@@ -62,6 +62,21 @@ public:
     virtual juce::String getTitle() const = 0;
     virtual void refresh() {}          // ~20 Hz while visible
     virtual void contextChanged() {}   // selected pad / track / project changed
+    /** Fast-changing LCD elements (playhead, meters), drawn on a light overlay above the screen
+        so they don't force the whole LCD to re-render. Rectangles are in this screen's coordinates. */
+    struct LiveOverlay
+    {
+        struct Meter
+        {
+            juce::Rectangle<int> area;
+            float level = 0.0f; // 0..1
+            bool vertical = false;
+            bool operator== (const Meter& o) const { return area == o.area && juce::approximatelyEqual (level, o.level) && vertical == o.vertical; }
+        };
+        juce::Rectangle<int> playhead;
+        std::vector<Meter> meters;
+    };
+    virtual void getLiveOverlay (double /*ticks*/, bool /*playing*/, LiveOverlay&) {}
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
         if (isShowing())

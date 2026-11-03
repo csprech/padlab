@@ -29,7 +29,16 @@ public:
             addAndMakeVisible (c);
     }
     void setShowSolo (bool b) { solo.setVisible (b); resized(); }
-    void setLevel (float peak) { meter = juce::jmax (peak, meter * 0.82f); repaint(); }
+    void setLevel (float peak) { meter = juce::jmax (peak, meter * 0.82f); }
+    float displayLevel() const
+    {
+        const float db = juce::Decibels::gainToDecibels (meter, -60.0f);
+        return std::round (juce::jmap (db, -60.0f, 6.0f, 0.0f, 1.0f) * 60.0f) / 60.0f;
+    }
+    juce::Rectangle<int> meterArea() const
+    {
+        return fader.getBounds().withTrimmedBottom (20).removeFromRight (5).translated (4, 0);
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -39,13 +48,8 @@ public:
         g.fillRect (r);
         if (showMeter)
         {
-            auto m = fader.getBounds().toFloat().withTrimmedBottom (20.0f).removeFromRight (5.0f).translated (4.0f, 0.0f);
             g.setColour (text.withAlpha (0.1f));
-            g.fillRect (m);
-            const float db = juce::Decibels::gainToDecibels (meter, -60.0f);
-            const float frac = juce::jmap (db, -60.0f, 6.0f, 0.0f, 1.0f);
-            g.setColour (db > -3.0f ? record : play);
-            g.fillRect (m.withTop (m.getBottom() - m.getHeight() * frac));
+            g.fillRect (meterArea());
         }
     }
 
@@ -114,6 +118,17 @@ public:
     }
 
     juce::String getTitle() const override { return "MIXER"; }
+
+    void getLiveOverlay (double, bool, LiveOverlay& o) override
+    {
+        auto add = [&o] (Strip& s) {
+            if (s.isVisible() && s.showMeter)
+                o.meters.push_back ({ s.meterArea() + s.getPosition(), s.displayLevel(), true });
+        };
+        for (int t = 0; t < kNumTracks; ++t)
+            add (strips[(size_t) t]);
+        add (master);
+    }
 
     void contextChanged() override
     {

@@ -1,6 +1,7 @@
 #include "ui/PadGrid.h"
 #include "core/SampleOps.h"
 #include "ui/Screens.h"
+#include "ui/Materials.h"
 
 namespace padlab
 {
@@ -79,7 +80,7 @@ void PadGrid::release (int i)
 void PadGrid::flashPad (int i, int velocity)
 {
     glow[(size_t) i] = juce::jmax (glow[(size_t) i], velocity / 127.0f);
-    repaint();
+    repaint (padBounds (i).withHeight (padBounds (i).getHeight() + kLabelH + 2.0f).expanded (8.0f).toNearestInt());
 }
 
 void PadGrid::mouseDown (const juce::MouseEvent& e)
@@ -106,6 +107,7 @@ void PadGrid::mouseUp (const juce::MouseEvent&)
 void PadGrid::timerCallback()
 {
     bool dirty = false;
+    std::array<bool, kPadsPerBank> padDirty {};
     const int bank = ctx.engine.getCurrentBank();
     const int prog = ctx.currentProgram();
 
@@ -121,7 +123,7 @@ void PadGrid::timerCallback()
         if (glow[(size_t) i] > 0.0f)
         {
             glow[(size_t) i] = juce::jmax (0.0f, glow[(size_t) i] - 0.12f);
-            dirty = true;
+            padDirty[(size_t) i] = true;
         }
     }
 
@@ -150,6 +152,14 @@ void PadGrid::timerCallback()
     });
     if (dirty)
         repaint();
+    else
+        for (int i = 0; i < kPadsPerBank; ++i)
+            if (padDirty[(size_t) i] || lastPainted[(size_t) i] != bank * kPadsPerBank + i)
+            {
+                // pad + its label strip only
+                repaint (padBounds (i).withHeight (padBounds (i).getHeight() + kLabelH + 2.0f).expanded (8.0f).toNearestInt());
+                lastPainted[(size_t) i] = bank * kPadsPerBank + i;
+            }
 }
 
 void PadGrid::resized() {}
@@ -161,36 +171,42 @@ void PadGrid::paint (juce::Graphics& g)
     const int selected = ctx.selectedPad;
     const auto view = ctx.padView;
 
+    const auto clip = g.getClipBounds().toFloat();
     for (int i = 0; i < kPadsPerBank; ++i)
     {
         const auto r = padBounds (i);
+        if (! clip.intersects (r.withHeight (r.getHeight() + kLabelH + 2.0f).expanded (10.0f)))
+            continue;
         const int pad = bank * kPadsPerBank + i;
         const float hit = glow[(size_t) i];
 
-        // recess in the deck
-        g.setColour (juce::Colours::black.withAlpha (0.30f));
-        g.fillRoundedRectangle (r.expanded (5.0f).translated (0, -0.5f), 9.0f);
-        g.setColour (colours::deck.darker (0.45f));
-        g.fillRoundedRectangle (r.expanded (3.5f), 8.0f);
+        // the well in the deck: darker at the top (it faces away from the light), lit lip at the bottom
+        auto well = r.expanded (5.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.22f));
+        g.drawRoundedRectangle (well.translated (0, 1.2f), 10.0f, 1.2f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2a28), 0, well.getY(), juce::Colour (0xff4a4844), 0,
+                                                 well.getBottom(), false));
+        g.fillRoundedRectangle (well, 10.0f);
 
-        // the rubber pad sinks when hit
-        const float press = juce::jmin (1.0f, hit * 1.2f);
-        auto p = r.reduced (press * 1.2f).translated (0, press * 1.8f);
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.fillRoundedRectangle (p.translated (0, 3.5f - press * 2.5f), 7.0f);
+        // the rubber pad sinks when struck
+        const float press = juce::jmin (1.0f, hit * 1.25f);
+        auto p = r.reduced (0.5f + press * 1.0f).translated (0, press * 1.6f);
+        juce::DropShadow (juce::Colours::black.withAlpha (0.75f - press * 0.25f), (int) (7.0f - press * 4.0f),
+                          { 0, (int) std::round (3.0f - press * 2.0f) })
+            .drawForRectangle (g, p.toNearestInt().reduced (2));
 
-        const auto base = colours::rubber.darker (press * 0.22f);
-        juce::ColourGradient body (base.brighter (0.16f), p.getCentreX(), p.getY() + p.getHeight() * 0.32f,
-                                   base.darker (0.28f), p.getX(), p.getBottom(), true);
-        g.setGradientFill (body);
-        g.fillRoundedRectangle (p, 7.0f);
-        g.setTiledImageFill (speckle (1), 0, 0, 1.0f);
-        g.fillRoundedRectangle (p, 7.0f);
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.13f * (1.0f - press)), p.getX(), p.getY(),
-                                                 juce::Colours::transparentWhite, p.getX(), p.getY() + p.getHeight() * 0.3f, false));
-        g.fillRoundedRectangle (p.reduced (1.5f), 6.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.45f));
-        g.drawRoundedRectangle (p, 7.0f, 1.0f);
+        const float sc = materials::scaleOf (g);
+        const int px = (int) std::ceil (r.getWidth() * sc);
+        const auto& padImg = materials::cached ("pad:" + juce::String (px), [=] {
+            return materials::pillow (px, px, px * 0.085f, px * 0.17f, px * 0.035f, colours::rubber, materials::rubber(), 23);
+        });
+        materials::drawAt (g, padImg, p);
+        if (press > 0.0f)
+        {
+            // compressed rubber catches less light
+            g.setColour (juce::Colours::black.withAlpha (0.16f * press));
+            g.fillRoundedRectangle (p, px / sc * 0.085f);
+        }
 
         if (dragHover == i)
         {

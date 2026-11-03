@@ -1,6 +1,7 @@
 #include "ui/MainComponent.h"
 #include "core/DrumSynth.h"
 #include "core/ProjectIO.h"
+#include "ui/Materials.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
 namespace padlab
@@ -31,6 +32,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     for (auto& s : screens)
     {
         s->setLookAndFeel (&lcdLnf);
+        s->setCachedComponentImage (new theme::LcdInkCache (*s));
         addChildComponent (*s);
     }
     for (auto* b : { &stopBtn, &undoBtn, &tapBtn })
@@ -41,6 +43,8 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
         addAndMakeVisible (l);
         l->setInterceptsMouseClicks (false, false);
     }
+    for (auto* l : { &positionLabel, &statusLabel, &messageLabel })
+        l->setComponentEffect (&lcdInkShadow);
     modeTitle.setFont (theme::screenFont (14.0f));
     modeTitle.setColour (juce::Label::textColourId, theme::lcd::backlight);
     projectTitle.setFont (theme::screenFont (14.0f));
@@ -170,6 +174,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
         addAndMakeVisible (b);
 
+    addAndMakeVisible (playhead);
     addAndMakeVisible (glass); // LCD glass sits on top of the screen contents
 
     setSize (1440, 880);
@@ -230,6 +235,7 @@ void MainComponent::resized()
     screenArea = left;
     lcdArea = screenArea.reduced (18, 16);
     glass.setBounds (lcdArea);
+    playhead.setBounds (lcdArea);
 
     auto inner = lcdArea.reduced (6);
     auto titleBar = inner.removeFromTop (22);
@@ -327,61 +333,147 @@ namespace
 
 void MainComponent::paint (juce::Graphics& g)
 {
+    const float sc = materials::scaleOf (g);
+    const int w = (int) std::ceil (getWidth() * sc), h = (int) std::ceil (getHeight() * sc);
+    if (background.getWidth() != w || background.getHeight() != h)
+    {
+        background = juce::Image (juce::Image::ARGB, std::max (1, w), std::max (1, h), true);
+        juce::Graphics bg (background);
+        bg.addTransform (juce::AffineTransform::scale (sc));
+        renderBackground (bg, sc);
+    }
+    g.drawImageTransformed (background, juce::AffineTransform::scale (1.0f / sc));
+}
+
+namespace
+{
+    /** Bevelled opening: four chamfer faces lit by a top-left light. */
+    void chamfer (juce::Graphics& g, juce::Rectangle<float> outer, float depth, bool recessed)
+    {
+        auto inner = outer.reduced (depth);
+        auto face = [&] (juce::Point<float> a, juce::Point<float> b, juce::Point<float> c, juce::Point<float> d, juce::Colour col) {
+            juce::Path p;
+            p.startNewSubPath (a);
+            p.lineTo (b);
+            p.lineTo (c);
+            p.lineTo (d);
+            p.closeSubPath();
+            g.setColour (col);
+            g.fillPath (p);
+        };
+        // a recess's top face looks down (shadowed); a raised edge's top face looks up (lit)
+        const auto litC = juce::Colours::white.withAlpha (0.20f), darkC = juce::Colours::black.withAlpha (0.45f);
+        const auto top = recessed ? darkC : litC, bottom = recessed ? litC : darkC;
+        const auto left = recessed ? juce::Colours::black.withAlpha (0.32f) : juce::Colours::white.withAlpha (0.12f);
+        const auto right = recessed ? juce::Colours::white.withAlpha (0.08f) : juce::Colours::black.withAlpha (0.25f);
+        face (outer.getTopLeft(), outer.getTopRight(), inner.getTopRight(), inner.getTopLeft(), top);
+        face (outer.getBottomLeft(), outer.getBottomRight(), inner.getBottomRight(), inner.getBottomLeft(), bottom);
+        face (outer.getTopLeft(), outer.getBottomLeft(), inner.getBottomLeft(), inner.getTopLeft(), left);
+        face (outer.getTopRight(), outer.getBottomRight(), inner.getBottomRight(), inner.getTopRight(), right);
+    }
+
+    void groove (juce::Graphics& g, juce::Line<float> line)
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.32f));
+        g.drawLine (line, 1.2f);
+        g.setColour (juce::Colours::white.withAlpha (0.30f));
+        g.drawLine (line.getStart().x + 1.2f, line.getStart().y + 1.2f, line.getEnd().x + 1.2f, line.getEnd().y + 1.2f, 1.0f);
+    }
+}
+
+void MainComponent::renderBackground (juce::Graphics& g, float sc)
+{
     using namespace theme;
     const auto bounds = getLocalBounds().toFloat();
+    const auto tileFill = [sc] (juce::Colour c, uint32_t seed) {
+        const int size = 240;
+        const auto& tile = materials::cached ("paint:" + c.toString() + ":" + juce::String ((int) seed),
+                                              [=] { return materials::paintTile (c, size, 1.0f, seed); });
+        return juce::FillType (tile, juce::AffineTransform::scale (1.0f / sc));
+    };
 
-    // ---- chassis: painted metal with speckle, lit from above
-    g.setGradientFill (juce::ColourGradient (colours::chassis.brighter (0.06f), 0, 0, colours::chassisLow, 0, bounds.getBottom(), false));
+    // ---- chassis: powder-coated steel lit from the top-left
+    g.setFillType (tileFill (colours::chassis, 7));
     g.fillAll();
-    g.setTiledImageFill (speckle (0), 0, 0, 1.0f);
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.16f), 0, 0, juce::Colours::transparentWhite,
+                                             bounds.getWidth() * 0.7f, bounds.getHeight() * 0.8f, true));
     g.fillAll();
-    g.setColour (juce::Colours::white.withAlpha (0.35f));
-    g.drawHorizontalLine (1, 0.0f, bounds.getWidth());
-    g.setColour (juce::Colours::black.withAlpha (0.25f));
-    g.drawHorizontalLine (getHeight() - 1, 0.0f, bounds.getWidth());
+    g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, 0, bounds.getHeight() * 0.35f,
+                                             juce::Colours::black.withAlpha (0.16f), 0, bounds.getBottom(), false));
+    g.fillAll();
+    // rounded case edge
+    chamfer (g, bounds, 5.0f, false);
+
+    // panel joint between the screen half and the pad half
+    const float jointX = (float) rightPanel.getX() - 13.0f;
+    groove (g, { jointX, 6.0f, jointX, bounds.getBottom() - 6.0f });
 
     // screws
-    const float sr = 6.0f;
-    drawScrew (g, { 13.0f, 12.0f }, sr, 0.4f);
-    drawScrew (g, { bounds.getRight() - 13.0f, 12.0f }, sr, 1.2f);
-    drawScrew (g, { 13.0f, bounds.getBottom() - 12.0f }, sr, 2.1f);
-    drawScrew (g, { bounds.getRight() - 13.0f, bounds.getBottom() - 12.0f }, sr, 0.9f);
+    const float sr = 6.5f;
+    drawScrew (g, { 14.0f, 13.0f }, sr, 0.4f);
+    drawScrew (g, { bounds.getRight() - 14.0f, 13.0f }, sr, 1.2f);
+    drawScrew (g, { 14.0f, bounds.getBottom() - 13.0f }, sr, 2.1f);
+    drawScrew (g, { bounds.getRight() - 14.0f, bounds.getBottom() - 13.0f }, sr, 0.9f);
+    drawScrew (g, { jointX + 0.5f, 13.0f }, sr, 1.7f);
+    drawScrew (g, { jointX + 0.5f, bounds.getBottom() - 13.0f }, sr, 0.2f);
 
-    // ---- pad deck: a darker inset plate
-    auto deck = deckArea.toFloat().expanded (8.0f, 6.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.25f));
-    g.drawRoundedRectangle (deck.translated (0, 1.0f), 10.0f, 1.2f);
-    g.setColour (colours::deck);
-    g.fillRoundedRectangle (deck, 10.0f);
-    g.setTiledImageFill (speckle (0), 0, 0, 1.0f);
-    g.fillRoundedRectangle (deck, 10.0f);
-    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.25f), 0, deck.getY(), juce::Colours::transparentBlack,
-                                             0, deck.getY() + 12.0f, false));
-    g.fillRoundedRectangle (deck.withHeight (14.0f), 10.0f);
-    g.setColour (colours::seam);
-    g.drawRoundedRectangle (deck, 10.0f, 1.0f);
+    // ---- pad deck: a recessed plate in a darker finish
+    auto deck = deckArea.toFloat().expanded (9.0f, 7.0f);
+    {
+        juce::Path deckPath;
+        deckPath.addRoundedRectangle (deck, 10.0f);
+        g.saveState();
+        g.reduceClipRegion (deckPath);
+        g.setFillType (tileFill (colours::deck, 11));
+        g.fillRect (deck);
+        // inner shadow: the lip of the chassis overhangs the deck at the top-left
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.40f), 0, deck.getY(),
+                                                 juce::Colours::transparentBlack, 0, deck.getY() + 18.0f, false));
+        g.fillRect (deck.withHeight (18.0f));
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.25f), deck.getX(), 0,
+                                                 juce::Colours::transparentBlack, deck.getX() + 14.0f, 0, false));
+        g.fillRect (deck.withWidth (14.0f));
+        g.restoreState();
+        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.drawRoundedRectangle (deck.translated (0.0f, 1.2f).expanded (0.6f), 10.5f, 1.2f);
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawRoundedRectangle (deck, 10.0f, 1.0f);
+    }
 
-    // ---- LCD bezel
+    // ---- LCD bezel: moulded dark plastic with a chamfered window
     auto bez = screenArea.toFloat();
-    g.setColour (juce::Colours::white.withAlpha (0.3f));
-    g.drawRoundedRectangle (bez.expanded (1.5f).translated (0, 1.0f), 12.0f, 1.2f);
-    g.setGradientFill (juce::ColourGradient (colours::bezel.brighter (0.12f), 0, bez.getY(), colours::bezel.darker (0.3f), 0,
-                                             bez.getBottom(), false));
-    g.fillRoundedRectangle (bez, 12.0f);
-    g.setColour (juce::Colours::black.withAlpha (0.6f));
-    g.drawRoundedRectangle (lcdArea.toFloat().expanded (2.0f), 4.0f, 2.0f);
-    // backlight
+    juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 10, { 0, 4 }).drawForRectangle (g, screenArea.reduced (6));
+    {
+        juce::Path bezPath;
+        bezPath.addRoundedRectangle (bez, 12.0f);
+        g.saveState();
+        g.reduceClipRegion (bezPath);
+        g.setFillType (tileFill (colours::bezel, 13));
+        g.fillRect (bez);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.10f), 0, bez.getY(),
+                                                 juce::Colours::black.withAlpha (0.25f), 0, bez.getBottom(), false));
+        g.fillRect (bez);
+        // specular rim along the top edge of the moulding
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.22f), 0, bez.getY(),
+                                                 juce::Colours::transparentWhite, 0, bez.getY() + 6.0f, false));
+        g.fillRect (bez.withHeight (6.0f));
+        g.restoreState();
+        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.drawRoundedRectangle (bez, 12.0f, 1.0f);
+    }
+    auto window = lcdArea.toFloat().expanded (7.0f);
+    chamfer (g, window, 7.0f, true);
+
+    // backlight behind the glass
     auto lcdR = lcdArea.toFloat();
-    g.setGradientFill (juce::ColourGradient (lcd::backlight.brighter (0.06f), lcdR.getCentreX(), lcdR.getCentreY() - lcdR.getHeight() * 0.1f,
-                                             lcd::backlightLo, lcdR.getX(), lcdR.getBottom(), true));
+    g.setGradientFill (juce::ColourGradient (lcd::backlight.brighter (0.08f), lcdR.getCentreX(), lcdR.getCentreY() - lcdR.getHeight() * 0.15f,
+                                             lcd::backlightLo.darker (0.05f), lcdR.getX(), lcdR.getBottom(), true));
     g.fillRect (lcdR);
-    // title bar (inverse video) and status rule
     auto inner = lcdArea.reduced (6);
     g.setColour (lcd::ink);
     g.fillRect (inner.removeFromTop (22));
     auto status = inner.removeFromBottom (30);
     g.fillRect (status.getX(), status.getY(), status.getWidth(), 2);
-    // bezel print
     drawSilk (g, "BACKLIT DOT MATRIX LCD", screenArea.withTrimmedTop (screenArea.getHeight() - 15).withTrimmedRight (22),
               juce::Justification::centredRight, 9.5f, true);
 
@@ -390,20 +482,24 @@ void MainComponent::paint (juce::Graphics& g)
         auto b = brandArea.reduced (4, 0);
         auto name = b.removeFromLeft ((int) (b.getWidth() * 0.55f));
         const float h = 40.0f;
-        // italic-ish wordmark via a shear transform
         juce::GlyphArrangement ga;
         ga.addLineOfText (labelFont (h), "PADLAB", (float) name.getX(), (float) name.getCentreY() + h * 0.32f);
         juce::Path wordmark;
         ga.createPath (wordmark);
         wordmark.applyTransform (juce::AffineTransform::shear (-0.18f, 0.0f).translated (name.getCentreY() * 0.18f, 0.0f));
+        // screen-printed ink sits on the paint: tiny highlight below it from the paint's edge
+        g.setColour (juce::Colours::white.withAlpha (0.25f));
+        g.fillPath (wordmark, juce::AffineTransform::translation (0.0f, 1.0f));
         g.setColour (colours::silk);
         g.fillPath (wordmark);
 
-        auto badge = juce::Rectangle<float> (wordmark.getBounds().getRight() + 10.0f, name.getCentreY() - 10.0f, 56.0f, 20.0f);
-        g.setColour (colours::bezel);
-        g.fillRoundedRectangle (badge, 3.0f);
+        auto badge = juce::Rectangle<float> (wordmark.getBounds().getRight() + 12.0f, name.getCentreY() - 11.0f, 60.0f, 22.0f);
+        juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 4, { 0, 2 }).drawForRectangle (g, badge.toNearestInt());
+        const int bw = (int) std::ceil (badge.getWidth() * sc), bh = (int) std::ceil (badge.getHeight() * sc);
+        materials::drawAt (g, materials::cached ("badge:" + juce::String (bw), [=] {
+                               return materials::pillow (bw, bh, 3.0f * sc, 3.0f * sc, 0.5f * sc, juce::Colour (0xff1e1e1d), materials::metal(), 31);
+                           }), badge);
         drawSilk (g, "PL-96", badge.toNearestInt(), juce::Justification::centred, 13.0f, true);
-
         drawSilk (g, "SAMPLING GROOVE\nWORKSTATION", b.reduced (0, 4), juce::Justification::centredRight, 12.0f);
     }
 
@@ -506,6 +602,7 @@ void MainComponent::timerCallback()
     positionLabel.setText ((recording ? "REC " : "") + positionLabel.getText(), juce::dontSendNotification);
 
     const int queued = engine.getQueuedSequence();
+    if (++statusTick % 6 == 0)
     statusLabel.setText ((queued >= 0 ? "NEXT SEQ " + juce::String (queued + 1) + "   " : juce::String())
                              + juce::String (bpm, 1) + " BPM   TRK " + juce::String (s.currentTrack + 1) + "   VOICES "
                              + juce::String (engine.getActiveVoices()) + "   CPU " + juce::String ((int) (engine.getCpuLoad() * 100)) + "%",
@@ -523,6 +620,17 @@ void MainComponent::timerCallback()
     auto& active = screens[(size_t) ctx.screen];
     if (active->isVisible())
         active->refresh();
+
+    Screen::LiveOverlay live;
+    if (active->isVisible())
+    {
+        active->getLiveOverlay (engine.getPositionTicks(), state == Transport::State::Playing, live);
+        const auto offset = active->getPosition() - playhead.getPosition();
+        live.playhead = live.playhead.isEmpty() ? live.playhead : live.playhead + offset;
+        for (auto& m : live.meters)
+            m.area = m.area + offset;
+    }
+    playhead.update (std::move (live));
 }
 
 // ---------------------------------------------------------------- transport helpers

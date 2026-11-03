@@ -126,7 +126,7 @@ public:
     explicit HardButton (const juce::String& text, juce::Colour led = colours::ledRed, Cap cap = Cap::Light);
     void setLit (bool lit);
     bool isLit() const { return lit; }
-    void setBlink (bool b) { blink = b; repaint(); }
+    void setBlink (bool b) { if (b != blink) { blink = b; repaint(); } }
     void setHasLed (bool b) { hasLed = b; repaint(); }
     void setCap (Cap c) { cap = c; repaint(); }
     void paintButton (juce::Graphics&, bool over, bool down) override;
@@ -137,11 +137,40 @@ private:
     bool lit = false, blink = false, hasLed = true;
 };
 
+/** LCD segments sit above the backlight and cast a faint offset shadow. Cheap: two masked blits, no blur. */
+class LcdInkShadow : public juce::ImageEffectFilter
+{
+public:
+    void applyEffect (juce::Image& src, juce::Graphics& g, float scale, float alpha) override;
+};
+
+/** Caches a component's rendering *with* the LCD ink shadow baked in. The composite is only
+    rebuilt when the component itself repaints, not when overlays above it do. */
+class LcdInkCache : public juce::CachedComponentImage
+{
+public:
+    explicit LcdInkCache (juce::Component& c) : owner (c) {}
+    void paint (juce::Graphics&) override;
+    bool invalidateAll() override { validArea.clear(); return true; }
+    bool invalidate (const juce::Rectangle<int>& area) override { validArea.subtract (area); return true; }
+    void releaseResources() override { content = composed = {}; }
+
+private:
+    juce::Component& owner;
+    juce::Image content, composed;
+    juce::RectangleList<int> validArea;
+    bool composedValid = false;
+};
+
 /** Paints the LCD glass on top of the screen contents: pixel grid, vignette, reflection. */
 class LcdGlass : public juce::Component
 {
 public:
-    LcdGlass() { setInterceptsMouseClicks (false, false); }
+    LcdGlass()
+    {
+        setInterceptsMouseClicks (false, false);
+        setBufferedToImage (true); // static: render once
+    }
     void paint (juce::Graphics&) override;
 };
 

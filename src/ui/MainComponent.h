@@ -31,6 +31,7 @@ public:
 
 private:
     void timerCallback() override;
+    void renderBackground (juce::Graphics&, float scale);
     void showScreen (ScreenMode m);
     void flash (const juce::String& message);
     void loadQLinksFromPad();
@@ -49,6 +50,55 @@ private:
     juce::Rectangle<int> screenArea, lcdArea, statusArea, rightPanel, brandArea, qlinkArea, padModeArea, bankArea,
         modeArea, transportArea, fileArea, deckArea;
     theme::LcdGlass glass;
+    theme::LcdInkShadow lcdInkShadow;
+
+    /** Fast-changing LCD elements (playhead, meters) drawn above the screen content,
+        so playback doesn't re-render the whole LCD every frame. */
+    struct LiveOverlay : juce::Component
+    {
+        LiveOverlay() { setInterceptsMouseClicks (false, false); }
+        void update (Screen::LiveOverlay next)
+        {
+            auto dirty = [this] (juce::Rectangle<int> r) { if (! r.isEmpty()) repaint (r.expanded (3)); };
+            if (next.playhead != state.playhead)
+            {
+                dirty (state.playhead);
+                dirty (next.playhead);
+            }
+            const auto n = std::max (state.meters.size(), next.meters.size());
+            for (size_t i = 0; i < n; ++i)
+            {
+                const bool same = i < state.meters.size() && i < next.meters.size() && state.meters[i] == next.meters[i];
+                if (! same)
+                {
+                    if (i < state.meters.size()) dirty (state.meters[i].area);
+                    if (i < next.meters.size()) dirty (next.meters[i].area);
+                }
+            }
+            state = std::move (next);
+        }
+        void paint (juce::Graphics& g) override
+        {
+            using namespace theme::lcd;
+            auto ink = [&g] (juce::Rectangle<int> r) {
+                g.setColour (theme::lcd::ink.withAlpha (0.18f));
+                g.fillRect (r.translated (2, 2));
+                g.setColour (theme::lcd::ink);
+                g.fillRect (r);
+            };
+            for (auto& m : state.meters)
+            {
+                auto r = m.area;
+                ink (m.vertical ? r.removeFromBottom ((int) std::round (r.getHeight() * m.level))
+                                : r.removeFromLeft ((int) std::round (r.getWidth() * m.level)));
+            }
+            if (! state.playhead.isEmpty())
+                ink (state.playhead);
+        }
+        Screen::LiveOverlay state;
+    } playhead;
+    int statusTick = 0;
+    juce::Image background; // static chassis, rendered once per size
     juce::Label modeTitle, projectTitle, positionLabel, statusLabel, messageLabel;
     uint32_t messageUntil = 0;
 

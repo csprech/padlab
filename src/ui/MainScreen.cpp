@@ -18,7 +18,7 @@ juce::StringArray divisionNames()
 class EventGrid : public juce::Component
 {
 public:
-    explicit EventGrid (AppContext& c) : ctx (c) {}
+    explicit EventGrid (AppContext& c) : ctx (c) { setBufferedToImage (true); }
 
     void refreshData()
     {
@@ -40,8 +40,20 @@ public:
                 rowNames[(size_t) i] = n;
             }
         });
-        position = ctx.engine.getTransportState() == Transport::State::Playing ? ctx.engine.getPositionTicks() : -1.0;
-        repaint();
+        const auto sig = signature();
+        if (sig != lastSignature)
+        {
+            lastSignature = sig;
+            repaint();
+        }
+    }
+
+    /** Playhead x for a tick position, or -1. */
+    juce::Rectangle<int> playheadRect (double ticks) const
+    {
+        if (length <= 0)
+            return {};
+        return { (int) xFor ((int64_t) ticks), headerH, 2, getHeight() - headerH };
     }
 
     void paint (juce::Graphics& g) override
@@ -114,11 +126,6 @@ public:
             g.fillRect (rect.reduced (1.5f).withHeight ((rect.getHeight() - 3.0f) * (1.0f - v)));
         }
 
-        if (position >= 0.0)
-        {
-            g.setColour (play);
-            g.drawVerticalLine ((int) xFor ((int64_t) position), (float) header.getY(), (float) getHeight());
-        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -233,13 +240,23 @@ private:
         return juce::jlimit (0, kPadsPerBank - 1, kPadsPerBank - 1 - (int) ((y - headerH) / rowH));
     }
 
+    juce::int64 signature() const
+    {
+        juce::int64 h = (juce::int64) length * 31 + beatsPerBar * 7 + track * 131 + bank * 977 + ctx.selectedPad * 7919;
+        for (auto& e : events)
+            h = h * 1000003 + e.tick * 131 + e.pad * 17 + e.velocity * 3 + e.length;
+        for (auto& n : rowNames)
+            h = h * 31 + n.hashCode64();
+        return h;
+    }
+
     AppContext& ctx;
     static constexpr int gutterW = 118, headerH = 18;
     std::vector<NoteEvent> events;
     std::array<juce::String, kPadsPerBank> rowNames;
     int64_t length = 3840;
     int beatsPerBar = 4, track = 0, bank = 0;
-    double position = -1.0;
+    juce::int64 lastSignature = 0;
     int dragEvent = -1, dragPad = 0, dragStartVel = 100;
     int64_t dragTick = 0;
 };
@@ -264,9 +281,19 @@ public:
                                      ! tr.events.empty() };
             }
         });
+        juce::int64 sig = current;
         for (int t = 0; t < kNumTracks; ++t)
+        {
             level[(size_t) t] = juce::jmax (ctx.engine.getTrackPeak (t), level[(size_t) t] * 0.8f);
-        repaint();
+            const auto& in = info[(size_t) t];
+            sig = sig * 131 + in.name.hashCode64() + in.program.hashCode64() * 3 + (in.mute ? 5 : 0) + (in.solo ? 7 : 0)
+                  + (in.hasEvents ? 11 : 0);
+        }
+        if (sig != lastSignature)
+        {
+            lastSignature = sig;
+            repaint();
+        }
     }
 
     void paint (juce::Graphics& g) override
@@ -302,10 +329,6 @@ public:
             g.setColour (in.solo ? screen : text);
             g.drawText ("S", s.toNearestInt(), juce::Justification::centred);
 
-            // meter
-            auto meter = r.removeFromBottom (3.0f).reduced (2.0f, 0.0f);
-            g.setColour (play.withAlpha (0.85f));
-            g.fillRect (meter.withWidth (meter.getWidth() * juce::jmin (1.0f, level[(size_t) t])));
         }
     }
 
@@ -340,6 +363,13 @@ public:
         }
     }
 
+    juce::Rectangle<int> meterRect (int t) const
+    {
+        auto r = cell (t);
+        return r.removeFromBottom (3.0f).reduced (2.0f, 0.0f).toNearestInt();
+    }
+    float meterLevel (int t) const { return std::round (juce::jmin (1.0f, level[(size_t) t]) * 40.0f) / 40.0f; }
+
 private:
     juce::Rectangle<float> cell (int t) const
     {
@@ -356,6 +386,7 @@ private:
     std::array<Info, kNumTracks> info;
     std::array<float, kNumTracks> level {};
     int current = 0;
+    juce::int64 lastSignature = -1;
 };
 
 // ------------------------------------------------------------------ main screen
@@ -495,6 +526,14 @@ public:
     }
 
     juce::String getTitle() const override { return "MAIN"; }
+
+    void getLiveOverlay (double ticks, bool playing, LiveOverlay& o) override
+    {
+        if (playing)
+            o.playhead = grid.playheadRect (ticks) + grid.getPosition();
+        for (int t = 0; t < kNumTracks; ++t)
+            o.meters.push_back ({ tracks.meterRect (t) + tracks.getPosition(), tracks.meterLevel (t), false });
+    }
 
     void contextChanged() override
     {

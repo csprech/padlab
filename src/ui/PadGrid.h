@@ -54,6 +54,7 @@ private:
     int mousePad = -1;
     std::array<int, kPadsPerBank> pressedAbs = [] { std::array<int, kPadsPerBank> a {}; a.fill (-1); return a; }();
     int dragHover = -1;
+    std::array<int, kPadsPerBank> lastPainted = [] { std::array<int, kPadsPerBank> a {}; a.fill (-1); return a; }();
 };
 
 } // namespace padlab
