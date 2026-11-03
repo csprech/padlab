@@ -1,0 +1,92 @@
+#include "core/Project.h"
+#include <algorithm>
+
+namespace padlab
+{
+bool Pad::hasSample() const
+{
+    for (auto& l : layers)
+        if (l.sample != nullptr)
+            return true;
+    return false;
+}
+
+Track::Track() { events.reserve (kEventCapacity); }
+
+Track::Track (const Track& other)
+    : name (other.name), programIndex (other.programIndex), mute (other.mute), solo (other.solo)
+{
+    events.reserve (kEventCapacity);
+    events = other.events;
+}
+
+Track& Track::operator= (const Track& other)
+{
+    name = other.name;
+    programIndex = other.programIndex;
+    mute = other.mute;
+    solo = other.solo;
+    if (events.capacity() < (size_t) kEventCapacity)
+        events.reserve (kEventCapacity);
+    events = other.events; // capacity is preserved by vector copy-assignment when large enough
+    return *this;
+}
+
+void Track::insertSorted (const NoteEvent& e)
+{
+    if (isFull())
+        return;
+    auto it = std::upper_bound (events.begin(), events.end(), e.tick,
+                                [] (int64_t t, const NoteEvent& ev) { return t < ev.tick; });
+    events.insert (it, e);
+}
+
+bool Sequence::anySolo() const
+{
+    return std::any_of (tracks.begin(), tracks.end(), [] (const Track& t) { return t.solo; });
+}
+
+Project::Project()
+{
+    for (int s = 0; s < kNumSequences; ++s)
+    {
+        sequences[(size_t) s].name = "Sequence " + juce::String (s + 1).paddedLeft ('0', 2);
+        for (int t = 0; t < kNumTracks; ++t)
+        {
+            auto& tr = sequences[(size_t) s].tracks[(size_t) t];
+            tr.name = "Track " + juce::String (t + 1);
+            tr.programIndex = t;
+        }
+    }
+    for (int p = 0; p < kNumTracks; ++p)
+        programs[(size_t) p].name = "Program " + juce::String (p + 1);
+}
+
+SamplePtr Project::findSample (const juce::String& n) const
+{
+    for (auto& s : samplePool)
+        if (s->name == n)
+            return s;
+    return nullptr;
+}
+
+void Project::addSample (SamplePtr s)
+{
+    if (std::find (samplePool.begin(), samplePool.end(), s) == samplePool.end())
+        samplePool.push_back (std::move (s));
+}
+
+juce::String Project::makeUniqueSampleName (const juce::String& base) const
+{
+    auto clean = base.isEmpty() ? juce::String ("Sample") : base;
+    if (findSample (clean) == nullptr)
+        return clean;
+    for (int i = 2;; ++i)
+    {
+        auto candidate = clean + " " + juce::String (i);
+        if (findSample (candidate) == nullptr)
+            return candidate;
+    }
+}
+
+} // namespace padlab
