@@ -115,7 +115,7 @@ std::vector<int> detectTransients (const Sample& s, double sensitivity, double m
             continue;
         bool isPeak = true;
         for (int j = std::max (0, f - peakRadius); j <= std::min (numFrames - 1, f + peakRadius); ++j)
-            if (j != f && (flux[(size_t) j] > v || (flux[(size_t) j] == v && j < f)))
+            if (j != f && (flux[(size_t) j] > v || (juce::exactlyEqual (flux[(size_t) j], v) && j < f)))
                 isPeak = false;
         if (! isPeak)
             continue;
