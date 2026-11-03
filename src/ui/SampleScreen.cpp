@@ -13,10 +13,10 @@ public:
     {
         addAndMakeVisible (title);
         title.setFont (theme::screenFont (16.0f, true));
-        title.setColour (juce::Label::textColourId, theme::colours::accent);
+        title.setColour (juce::Label::textColourId, theme::lcd::accent);
         addAndMakeVisible (info);
         info.setFont (theme::screenFont (12.0f));
-        info.setColour (juce::Label::textColourId, theme::colours::textDim);
+        info.setColour (juce::Label::textColourId, theme::lcd::textDim);
         info.setJustificationType (juce::Justification::centredRight);
 
         addAndMakeVisible (wave);
@@ -69,8 +69,8 @@ public:
                                                                     &fitTempo, &loopBars, &convertBtn, &capTarget, &capLoop,
                                                                     &hint })
             addAndMakeVisible (comp);
-        hint.setFont (theme::labelFont (11.5f));
-        hint.setColour (juce::Label::textColourId, theme::colours::textDim);
+        hint.setFont (theme::screenFont (11.5f));
+        hint.setColour (juce::Label::textColourId, theme::lcd::textDim);
         hint.setText ("Click a slice to hear it.  Manual mode: click adds a marker, Cmd-click removes one.",
                       juce::dontSendNotification);
         updateVisibility();

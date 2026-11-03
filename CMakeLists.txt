@@ -33,6 +33,8 @@ option(PADLAB_BUILD_APP "Build the GUI app" ON)
 
 # ---------------------------------------------------------------- app
 if(PADLAB_BUILD_APP)
+juce_add_binary_data(PadlabAssets SOURCES assets/fonts/VT323-Regular.ttf)
+
 juce_add_gui_app(Padlab
   PRODUCT_NAME "Padlab"
   COMPANY_NAME "Padlab Research"
@@ -60,6 +62,7 @@ target_compile_definitions(Padlab PRIVATE ${PADLAB_JUCE_DEFS}
   JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Padlab,JUCE_VERSION>")
 
 target_link_libraries(Padlab PRIVATE
+  PadlabAssets
   juce::juce_audio_utils
   juce::juce_audio_devices
   juce::juce_audio_formats

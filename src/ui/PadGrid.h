@@ -36,6 +36,16 @@ private:
     juce::Rectangle<float> padBounds (int index16) const;
     int velocityFor (int index16, juce::Point<int> p) const;
 
+public:
+    static constexpr float kMargin = 14.0f, kGap = 12.0f, kLabelH = 20.0f;
+    /** Height needed for square pads at a given width. */
+    static int heightForWidth (int w)
+    {
+        const float size = (w - kMargin * 2 - kGap * 3) / 4.0f;
+        return (int) std::ceil (kMargin * 2 + kGap * 3 + (size + kLabelH) * 4);
+    }
+
+private:
     AppContext& ctx;
     std::array<float, kPadsPerBank> glow {};
     std::array<uint32_t, kNumPads> lastHits {};

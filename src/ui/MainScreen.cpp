@@ -46,7 +46,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        using namespace theme::colours;
+        using namespace theme::lcd;
         auto r = getLocalBounds();
         g.setColour (screen);
         g.fillRect (r);
@@ -67,7 +67,7 @@ public:
             }
             else if (i % 2 == 0)
             {
-                g.setColour (juce::Colours::white.withAlpha (0.015f));
+                g.setColour (text.withAlpha (0.035f));
                 g.fillRect (row);
             }
             g.setColour (pad == ctx.selectedPad ? accent : textDim);
@@ -83,7 +83,7 @@ public:
         {
             const float x = xFor (t);
             const bool bar = (t % barTicks) == 0, beat = (t % kPPQN) == 0;
-            g.setColour (bar ? screenLine.brighter (0.6f) : beat ? screenLine.brighter (0.15f) : grid);
+            g.setColour (bar ? text.withAlpha (0.6f) : beat ? text.withAlpha (0.3f) : grid);
             g.drawVerticalLine ((int) x, (float) header.getBottom(), (float) getHeight());
             if (bar && t < length)
             {
@@ -108,10 +108,10 @@ public:
             auto rect = juce::Rectangle<float> (x + 1.0f, row.getY() + 2.0f, w, row.getHeight() - 4.0f);
             const float v = e.velocity / 127.0f;
             g.setColour (accent.withAlpha (0.35f + 0.65f * v));
-            g.fillRoundedRectangle (rect, 2.0f);
+            g.fillRect (rect);
             // velocity bar
-            g.setColour (juce::Colours::black.withAlpha (0.35f));
-            g.fillRect (rect.withHeight (rect.getHeight() * (1.0f - v)));
+            g.setColour (screen.withAlpha (0.55f));
+            g.fillRect (rect.reduced (1.5f).withHeight ((rect.getHeight() - 3.0f) * (1.0f - v)));
         }
 
         if (position >= 0.0)
@@ -271,15 +271,15 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        using namespace theme::colours;
+        using namespace theme::lcd;
         for (int t = 0; t < kNumTracks; ++t)
         {
             auto r = cell (t);
             const auto& in = info[(size_t) t];
-            g.setColour (t == current ? accent.withAlpha (0.18f) : screen.brighter (0.03f));
-            g.fillRoundedRectangle (r, 3.0f);
+            g.setColour (t == current ? accent.withAlpha (0.16f) : juce::Colours::transparentBlack);
+            g.fillRect (r);
             g.setColour (t == current ? accent : screenLine);
-            g.drawRoundedRectangle (r, 3.0f, 1.0f);
+            g.drawRect (r, 1.0f);
 
             auto inner = r.reduced (5.0f, 3.0f);
             auto top = inner.removeFromTop (inner.getHeight() * 0.5f);
@@ -293,13 +293,13 @@ public:
             // M / S
             auto ms = inner.removeFromRight (36.0f);
             auto m = ms.removeFromLeft (17.0f).reduced (1.0f), s = ms.reduced (1.0f);
-            g.setColour (in.mute ? accent : screenLine);
-            g.fillRoundedRectangle (m, 2.0f);
-            g.setColour (in.solo ? accent2 : screenLine);
-            g.fillRoundedRectangle (s, 2.0f);
-            g.setColour (juce::Colours::black);
-            g.setFont (theme::labelFont (10.0f, true));
+            g.setColour (text);
+            if (in.mute) g.fillRect (m); else g.drawRect (m, 1.0f);
+            if (in.solo) g.fillRect (s); else g.drawRect (s, 1.0f);
+            g.setFont (theme::screenFont (10.0f, true));
+            g.setColour (in.mute ? screen : text);
             g.drawText ("M", m.toNearestInt(), juce::Justification::centred);
+            g.setColour (in.solo ? screen : text);
             g.drawText ("S", s.toNearestInt(), juce::Justification::centred);
 
             // meter

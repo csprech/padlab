@@ -29,25 +29,30 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     screens[3] = createSamplerScreen (ctx);
     screens[4] = createMixerScreen (ctx);
     for (auto& s : screens)
+    {
+        s->setLookAndFeel (&lcdLnf);
         addChildComponent (*s);
+    }
+    for (auto* b : { &stopBtn, &undoBtn, &tapBtn })
+        b->setHasLed (false);
 
     for (auto* l : { &modeTitle, &projectTitle, &positionLabel, &statusLabel, &messageLabel })
     {
         addAndMakeVisible (l);
         l->setInterceptsMouseClicks (false, false);
     }
-    modeTitle.setFont (theme::screenFont (13.0f, true));
-    modeTitle.setColour (juce::Label::textColourId, juce::Colours::black);
-    projectTitle.setFont (theme::screenFont (13.0f, true));
-    projectTitle.setColour (juce::Label::textColourId, juce::Colours::black);
+    modeTitle.setFont (theme::screenFont (14.0f));
+    modeTitle.setColour (juce::Label::textColourId, theme::lcd::backlight);
+    projectTitle.setFont (theme::screenFont (14.0f));
+    projectTitle.setColour (juce::Label::textColourId, theme::lcd::backlight);
     projectTitle.setJustificationType (juce::Justification::centredRight);
-    positionLabel.setFont (theme::screenFont (20.0f, true));
-    positionLabel.setColour (juce::Label::textColourId, theme::colours::accent);
-    statusLabel.setFont (theme::screenFont (12.0f));
-    statusLabel.setColour (juce::Label::textColourId, theme::colours::textDim);
+    positionLabel.setFont (theme::screenFont (21.0f));
+    positionLabel.setColour (juce::Label::textColourId, theme::lcd::ink);
+    statusLabel.setFont (theme::screenFont (13.0f));
+    statusLabel.setColour (juce::Label::textColourId, theme::lcd::textDim);
     statusLabel.setJustificationType (juce::Justification::centredRight);
-    messageLabel.setFont (theme::screenFont (13.0f, true));
-    messageLabel.setColour (juce::Label::textColourId, theme::colours::accent2);
+    messageLabel.setFont (theme::screenFont (14.0f));
+    messageLabel.setColour (juce::Label::textColourId, theme::lcd::ink);
     messageLabel.setJustificationType (juce::Justification::centred);
 
     addAndMakeVisible (pads);
@@ -57,15 +62,15 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     {
         auto& q = qlinks[(size_t) i];
         q.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        q.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 16);
+        q.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 16);
         q.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         q.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
         q.onValueChange = [this, i] { qlinkChanged (i); };
         addAndMakeVisible (q);
         auto& l = qlinkLabels[(size_t) i];
         l.setText (kQLinkNames[i], juce::dontSendNotification);
-        l.setFont (theme::labelFont (11.0f, true));
-        l.setColour (juce::Label::textColourId, theme::colours::textDim);
+        l.setFont (theme::labelFont (12.0f));
+        l.setColour (juce::Label::textColourId, theme::colours::silk);
         l.setJustificationType (juce::Justification::centred);
         addAndMakeVisible (l);
     }
@@ -165,6 +170,8 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
         addAndMakeVisible (b);
 
+    addAndMakeVisible (glass); // LCD glass sits on top of the screen contents
+
     setSize (1440, 880);
     showScreen (ScreenMode::Main);
     loadQLinksFromPad();
@@ -208,48 +215,53 @@ MainComponent::~MainComponent()
 
 void MainComponent::resized()
 {
-    auto r = getLocalBounds().reduced (16);
-    rightPanel = r.removeFromRight (juce::jlimit (420, 560, (int) (r.getWidth() * 0.36f)));
-    r.removeFromRight (16);
+    auto r = getLocalBounds().reduced (26, 22);
+    rightPanel = r.removeFromRight (juce::jlimit (420, 560, (int) (r.getWidth() * 0.345f)));
+    r.removeFromRight (26);
 
-    // left: screen + buttons
+    // ---- left: brand, LCD, mode keys, transport keys
     auto left = r;
-    auto transport = left.removeFromBottom (58);
+    brandArea = left.removeFromTop (46);
+    left.removeFromTop (6);
+    transportArea = left.removeFromBottom (78);
+    left.removeFromBottom (8);
+    modeArea = left.removeFromBottom (74);
     left.removeFromBottom (10);
-    auto modes = left.removeFromBottom (54);
-    left.removeFromBottom (12);
-
     screenArea = left;
-    auto inner = screenArea.reduced (10);
+    lcdArea = screenArea.reduced (18, 16);
+    glass.setBounds (lcdArea);
+
+    auto inner = lcdArea.reduced (6);
     auto titleBar = inner.removeFromTop (22);
-    modeTitle.setBounds (titleBar.removeFromLeft (titleBar.getWidth() / 2).withTrimmedLeft (8));
-    projectTitle.setBounds (titleBar.withTrimmedRight (8));
+    modeTitle.setBounds (titleBar.removeFromLeft (titleBar.getWidth() / 2).withTrimmedLeft (6));
+    projectTitle.setBounds (titleBar.withTrimmedRight (6));
     statusArea = inner.removeFromBottom (30);
-    auto st = statusArea.reduced (8, 2);
-    positionLabel.setBounds (st.removeFromLeft (190));
-    statusLabel.setBounds (st.removeFromRight (360));
+    auto st = statusArea.reduced (6, 2);
+    positionLabel.setBounds (st.removeFromLeft (220));
+    statusLabel.setBounds (st.removeFromRight (380));
     messageLabel.setBounds (st);
     for (auto& s : screens)
         s->setBounds (inner);
 
     {
-        auto m = modes;
-        const int w = 92;
+        auto m = modeArea.withTrimmedTop (16);
+        const int w = 96;
         for (auto* b : { &mainBtn, &progBtn, &sampleBtn, &samplerBtn, &mixerBtn })
         {
             b->setBounds (m.removeFromLeft (w));
-            m.removeFromLeft (8);
+            m.removeFromLeft (6);
         }
-        auto files = m.removeFromRight (360).withSizeKeepingCentre (360, 28);
+        fileArea = m.removeFromRight (340);
+        auto files = fileArea.withTrimmedTop (4).withSizeKeepingCentre (340, 30);
         for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
         {
-            b->setBounds (files.removeFromLeft (b == &settingsBtn ? 102 : 80));
+            b->setBounds (files.removeFromLeft (b == &settingsBtn ? 100 : 74));
             files.removeFromLeft (6);
         }
     }
     {
-        auto t = transport;
-        const int w = juce::jmin (100, (t.getWidth() - 6 * 8) / 7);
+        auto t = transportArea.withTrimmedTop (16);
+        const int w = juce::jmin (104, (t.getWidth() - 6 * 8) / 7);
         for (auto* b : { &recBtn, &overdubBtn, &stopBtn, &playBtn, &playStartBtn })
         {
             b->setBounds (t.removeFromLeft (w));
@@ -260,30 +272,33 @@ void MainComponent::resized()
         undoBtn.setBounds (t.removeFromRight (w));
     }
 
-    // right: brand, q-links, pad modes, banks, pads (pads anchored to the bottom, square)
+    // ---- right: brand, Q-links, pad modes, banks, pad deck
     auto rp = rightPanel;
-    const int padGap = 10;
-    const int padSize = (rp.getWidth() - padGap * 5) / 4;
-    pads.setBounds (rp.removeFromBottom (padSize * 4 + padGap * 5));
-    brandArea = rp.removeFromTop (juce::jmax (0, rp.getHeight() - (110 + 10 + 52 + 8 + 40 + 8)));
-    auto qrow = rp.removeFromTop (110);
+    deckArea = rp.removeFromBottom (PadGrid::heightForWidth (rp.getWidth()));
+    pads.setBounds (deckArea);
+    rp.removeFromBottom (10);
+    bankArea = rp.removeFromBottom (58);
+    rp.removeFromBottom (4);
+    padModeArea = rp.removeFromBottom (72);
+    rp.removeFromBottom (4);
+    qlinkArea = rp;
+
+    auto qrow = qlinkArea.withTrimmedTop (18);
     const int qw = qrow.getWidth() / 4;
     for (int i = 0; i < 4; ++i)
     {
-        auto cell = qrow.removeFromLeft (qw);
-        qlinkLabels[(size_t) i].setBounds (cell.removeFromTop (16));
-        qlinks[(size_t) i].setBounds (cell);
+        auto cell = qrow.removeFromLeft (qw).reduced (4, 0);
+        qlinkLabels[(size_t) i].setBounds (cell.removeFromBottom (18));
+        qlinks[(size_t) i].setBounds (cell.withSizeKeepingCentre (juce::jmin (cell.getWidth(), cell.getHeight() + 16), cell.getHeight()));
     }
-    rp.removeFromTop (10);
-    auto modeRow = rp.removeFromTop (52);
+    auto modeRow = padModeArea.withTrimmedTop (16);
     const int mw = (modeRow.getWidth() - 5 * 6) / 6;
     for (auto* b : { &fullLevel, &sixteenLevels, &noteRepeat, &erase, &trackMute, &padMute })
     {
         b->setBounds (modeRow.removeFromLeft (mw));
         modeRow.removeFromLeft (6);
     }
-    rp.removeFromTop (8);
-    auto bankRow = rp.removeFromTop (40);
+    auto bankRow = bankArea.withTrimmedTop (16);
     const int bw = (bankRow.getWidth() - 7 * 6) / 8;
     for (auto& b : banks)
     {
@@ -292,45 +307,113 @@ void MainComponent::resized()
     }
 }
 
+namespace
+{
+    // a printed section header with a rule either side, like silkscreened panel groupings
+    void sectionHeader (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> row, bool light = false)
+    {
+        using namespace padlab::theme;
+        auto r = row.removeFromTop (14);
+        g.setFont (labelFont (11.5f));
+        const int tw = (int) std::ceil (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text)) + 14;
+        auto textR = r.withSizeKeepingCentre (tw, r.getHeight());
+        g.setColour ((light ? colours::silkLight : colours::silk).withAlpha (0.55f));
+        const float y = (float) r.getCentreY();
+        g.drawLine ((float) r.getX(), y, (float) textR.getX(), y, 1.0f);
+        g.drawLine ((float) textR.getRight(), y, (float) r.getRight(), y, 1.0f);
+        drawSilk (g, text, textR, juce::Justification::centred, 11.5f, light);
+    }
+}
+
 void MainComponent::paint (juce::Graphics& g)
 {
-    using namespace theme::colours;
-    // body
-    g.setGradientFill (juce::ColourGradient (bodyLight, 0, 0, body, 0, (float) getHeight(), false));
+    using namespace theme;
+    const auto bounds = getLocalBounds().toFloat();
+
+    // ---- chassis: painted metal with speckle, lit from above
+    g.setGradientFill (juce::ColourGradient (colours::chassis.brighter (0.06f), 0, 0, colours::chassisLow, 0, bounds.getBottom(), false));
     g.fillAll();
+    g.setTiledImageFill (speckle (0), 0, 0, 1.0f);
+    g.fillAll();
+    g.setColour (juce::Colours::white.withAlpha (0.35f));
+    g.drawHorizontalLine (1, 0.0f, bounds.getWidth());
+    g.setColour (juce::Colours::black.withAlpha (0.25f));
+    g.drawHorizontalLine (getHeight() - 1, 0.0f, bounds.getWidth());
 
+    // screws
+    const float sr = 6.0f;
+    drawScrew (g, { 13.0f, 12.0f }, sr, 0.4f);
+    drawScrew (g, { bounds.getRight() - 13.0f, 12.0f }, sr, 1.2f);
+    drawScrew (g, { 13.0f, bounds.getBottom() - 12.0f }, sr, 2.1f);
+    drawScrew (g, { bounds.getRight() - 13.0f, bounds.getBottom() - 12.0f }, sr, 0.9f);
 
-    // screen bezel
+    // ---- pad deck: a darker inset plate
+    auto deck = deckArea.toFloat().expanded (8.0f, 6.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.25f));
+    g.drawRoundedRectangle (deck.translated (0, 1.0f), 10.0f, 1.2f);
+    g.setColour (colours::deck);
+    g.fillRoundedRectangle (deck, 10.0f);
+    g.setTiledImageFill (speckle (0), 0, 0, 1.0f);
+    g.fillRoundedRectangle (deck, 10.0f);
+    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.25f), 0, deck.getY(), juce::Colours::transparentBlack,
+                                             0, deck.getY() + 12.0f, false));
+    g.fillRoundedRectangle (deck.withHeight (14.0f), 10.0f);
+    g.setColour (colours::seam);
+    g.drawRoundedRectangle (deck, 10.0f, 1.0f);
+
+    // ---- LCD bezel
     auto bez = screenArea.toFloat();
-    g.setColour (bodyEdge);
-    g.fillRoundedRectangle (bez.expanded (4.0f), 10.0f);
-    g.setColour (screen);
-    g.fillRoundedRectangle (bez, 8.0f);
-    auto inner = screenArea.reduced (10);
-    // title bar
-    auto title = inner.removeFromTop (22).toFloat();
-    g.setColour (accent);
-    g.fillRoundedRectangle (title, 3.0f);
-    // status bar
-    auto status = inner.removeFromBottom (30).toFloat();
-    g.setColour (screen.brighter (0.05f));
-    g.fillRoundedRectangle (status, 3.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.3f));
+    g.drawRoundedRectangle (bez.expanded (1.5f).translated (0, 1.0f), 12.0f, 1.2f);
+    g.setGradientFill (juce::ColourGradient (colours::bezel.brighter (0.12f), 0, bez.getY(), colours::bezel.darker (0.3f), 0,
+                                             bez.getBottom(), false));
+    g.fillRoundedRectangle (bez, 12.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.drawRoundedRectangle (lcdArea.toFloat().expanded (2.0f), 4.0f, 2.0f);
+    // backlight
+    auto lcdR = lcdArea.toFloat();
+    g.setGradientFill (juce::ColourGradient (lcd::backlight.brighter (0.06f), lcdR.getCentreX(), lcdR.getCentreY() - lcdR.getHeight() * 0.1f,
+                                             lcd::backlightLo, lcdR.getX(), lcdR.getBottom(), true));
+    g.fillRect (lcdR);
+    // title bar (inverse video) and status rule
+    auto inner = lcdArea.reduced (6);
+    g.setColour (lcd::ink);
+    g.fillRect (inner.removeFromTop (22));
+    auto status = inner.removeFromBottom (30);
+    g.fillRect (status.getX(), status.getY(), status.getWidth(), 2);
+    // bezel print
+    drawSilk (g, "BACKLIT DOT MATRIX LCD", screenArea.withTrimmedTop (screenArea.getHeight() - 15).withTrimmedRight (22),
+              juce::Justification::centredRight, 9.5f, true);
 
-    // right panel plate
-    g.setColour (bodyEdge.withAlpha (0.5f));
-    g.fillRoundedRectangle (rightPanel.toFloat().expanded (8.0f), 12.0f);
-
-    // brand
-    if (brandArea.getHeight() > 24)
+    // ---- brand plate
     {
         auto b = brandArea.reduced (4, 0);
-        g.setColour (text.withAlpha (0.9f));
-        g.setFont (theme::labelFont (juce::jmin (34.0f, brandArea.getHeight() * 0.5f), true));
-        g.drawText ("PADLAB", b, juce::Justification::centredLeft);
-        g.setColour (accent);
-        g.setFont (theme::labelFont (11.0f, true));
-        g.drawText ("SAMPLING GROOVE WORKSTATION", b, juce::Justification::centredRight);
+        auto name = b.removeFromLeft ((int) (b.getWidth() * 0.55f));
+        const float h = 40.0f;
+        // italic-ish wordmark via a shear transform
+        juce::GlyphArrangement ga;
+        ga.addLineOfText (labelFont (h), "PADLAB", (float) name.getX(), (float) name.getCentreY() + h * 0.32f);
+        juce::Path wordmark;
+        ga.createPath (wordmark);
+        wordmark.applyTransform (juce::AffineTransform::shear (-0.18f, 0.0f).translated (name.getCentreY() * 0.18f, 0.0f));
+        g.setColour (colours::silk);
+        g.fillPath (wordmark);
+
+        auto badge = juce::Rectangle<float> (wordmark.getBounds().getRight() + 10.0f, name.getCentreY() - 10.0f, 56.0f, 20.0f);
+        g.setColour (colours::bezel);
+        g.fillRoundedRectangle (badge, 3.0f);
+        drawSilk (g, "PL-96", badge.toNearestInt(), juce::Justification::centred, 13.0f, true);
+
+        drawSilk (g, "SAMPLING GROOVE\nWORKSTATION", b.reduced (0, 4), juce::Justification::centredRight, 12.0f);
     }
+
+    // ---- silkscreen section headers
+    sectionHeader (g, "Q-LINK  /  SELECTED PAD", qlinkArea);
+    sectionHeader (g, "PAD PERFORMANCE", padModeArea);
+    sectionHeader (g, "PAD BANK", bankArea);
+    sectionHeader (g, "MODE", modeArea.withWidth (5 * 96 + 4 * 6));
+    sectionHeader (g, "DISK", fileArea);
+    sectionHeader (g, "TRANSPORT", transportArea);
 }
 
 // ---------------------------------------------------------------- screens / state
@@ -419,9 +502,8 @@ void MainComponent::timerCallback()
               + juce::String (tick).paddedLeft ('0', 3);
     }
     positionLabel.setText (pos, juce::dontSendNotification);
-    positionLabel.setColour (juce::Label::textColourId, engine.getRecordMode() != RecordMode::None && state != Transport::State::Stopped
-                                                           ? theme::colours::record
-                                                           : theme::colours::accent);
+    const bool recording = engine.getRecordMode() != RecordMode::None && state != Transport::State::Stopped;
+    positionLabel.setText ((recording ? "REC " : "") + positionLabel.getText(), juce::dontSendNotification);
 
     const int queued = engine.getQueuedSequence();
     statusLabel.setText ((queued >= 0 ? "NEXT SEQ " + juce::String (queued + 1) + "   " : juce::String())
@@ -681,7 +763,7 @@ void MainComponent::showAudioSettings()
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (selector);
     o.dialogTitle = "Audio / MIDI settings";
-    o.dialogBackgroundColour = theme::colours::bodyLight;
+    o.dialogBackgroundColour = theme::colours::chassis;
     o.escapeKeyTriggersCloseButton = true;
     o.useNativeTitleBar = true;
     o.resizable = false;

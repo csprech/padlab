@@ -12,11 +12,11 @@ public:
     {
         addAndMakeVisible (title);
         title.setFont (theme::screenFont (18.0f, true));
-        title.setColour (juce::Label::textColourId, theme::colours::accent);
+        title.setColour (juce::Label::textColourId, theme::lcd::accent);
 
         programName.setFont (theme::screenFont (14.0f));
         programName.setEditable (true);
-        programName.setColour (juce::Label::backgroundColourId, theme::colours::screen.brighter (0.04f));
+        programName.setColour (juce::Label::backgroundColourId, theme::lcd::text.withAlpha (0.06f));
         programName.onTextChange = [this] {
             const auto n = programName.getText();
             edit ([n] (Program& p, Pad&) { p.name = n; });
@@ -33,7 +33,7 @@ public:
             auto& L = layers[(size_t) i];
             L.index.setText (juce::String (i + 1), juce::dontSendNotification);
             L.index.setFont (theme::screenFont (14.0f, true));
-            L.index.setColour (juce::Label::textColourId, theme::colours::textDim);
+            L.index.setColour (juce::Label::textColourId, theme::lcd::textDim);
             addAndMakeVisible (L.index);
 
             L.sample.onChange = [this, i] { layerSampleChanged (i); };

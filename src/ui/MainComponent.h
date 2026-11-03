@@ -41,11 +41,14 @@ private:
 
     Engine& engine;
     AppContext ctx;
-    theme::LookAndFeel lnf;
+    theme::HardwareLookAndFeel lnf;
+    theme::LcdLookAndFeel lcdLnf;
     juce::TooltipWindow tooltips { this, 600 };
 
     std::array<std::unique_ptr<Screen>, 5> screens;
-    juce::Rectangle<int> screenArea, statusArea, rightPanel, brandArea;
+    juce::Rectangle<int> screenArea, lcdArea, statusArea, rightPanel, brandArea, qlinkArea, padModeArea, bankArea,
+        modeArea, transportArea, fileArea, deckArea;
+    theme::LcdGlass glass;
     juce::Label modeTitle, projectTitle, positionLabel, statusLabel, messageLabel;
     uint32_t messageUntil = 0;
 
@@ -58,19 +61,22 @@ private:
 
     // pad modes
     theme::HardButton fullLevel { "FULL\nLEVEL" }, sixteenLevels { "16\nLEVELS" }, noteRepeat { "NOTE\nREPEAT" },
-        erase { "ERASE", theme::colours::record }, trackMute { "TRACK\nMUTE", theme::colours::play },
-        padMute { "PAD\nMUTE", theme::colours::accent2 };
+        erase { "ERASE" }, trackMute { "TRACK\nMUTE", theme::colours::ledGreen },
+        padMute { "PAD\nMUTE", theme::colours::ledGreen };
     std::array<std::unique_ptr<theme::HardButton>, kNumBanks> banks;
 
     // screen modes
-    theme::HardButton mainBtn { "MAIN", theme::colours::accent2 }, progBtn { "PROG\nEDIT", theme::colours::accent2 },
-        sampleBtn { "SAMPLE\nEDIT", theme::colours::accent2 }, samplerBtn { "SAMPLER", theme::colours::accent2 },
-        mixerBtn { "MIXER", theme::colours::accent2 };
+    theme::HardButton mainBtn { "MAIN" }, progBtn { "PROGRAM\nEDIT" }, sampleBtn { "SAMPLE\nEDIT" },
+        samplerBtn { "SAMPLER" }, mixerBtn { "MIXER" };
 
     // transport
-    theme::HardButton recBtn { "REC", theme::colours::record }, overdubBtn { "OVERDUB", theme::colours::record },
-        stopBtn { "STOP" }, playBtn { "PLAY", theme::colours::play }, playStartBtn { "PLAY\nSTART", theme::colours::play },
-        undoBtn { "UNDO" }, tapBtn { "TAP\nTEMPO" };
+    using Cap = theme::HardButton::Cap;
+    theme::HardButton recBtn { "REC", theme::colours::ledRed, Cap::Red },
+        overdubBtn { "OVER\nDUB", theme::colours::ledRed, Cap::Dark },
+        stopBtn { "STOP", theme::colours::ledRed, Cap::Dark },
+        playBtn { "PLAY", theme::colours::ledGreen, Cap::Dark },
+        playStartBtn { "PLAY\nSTART", theme::colours::ledGreen, Cap::Dark },
+        undoBtn { "UNDO", theme::colours::ledRed, Cap::Light }, tapBtn { "TAP\nTEMPO", theme::colours::ledRed, Cap::Light };
 
     // file
     juce::TextButton newBtn { "New" }, openBtn { "Open" }, saveBtn { "Save" }, settingsBtn { "Audio/MIDI" };

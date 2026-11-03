@@ -19,12 +19,12 @@ public:
         pan.setRange (-1.0, 1.0, 0.01);
         pan.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         pan.setDoubleClickReturnValue (true, 0.0);
-        pan.setColour (juce::Slider::trackColourId, theme::colours::accent2);
+        pan.setColour (juce::Slider::trackColourId, theme::lcd::accent2);
         name.setFont (theme::screenFont (11.0f, true));
         name.setJustificationType (juce::Justification::centred);
         mute.setClickingTogglesState (true);
         solo.setClickingTogglesState (true);
-        solo.setColour (juce::TextButton::buttonOnColourId, theme::colours::accent2);
+        solo.setColour (juce::TextButton::buttonOnColourId, theme::lcd::accent2);
         for (auto* c : std::initializer_list<juce::Component*> { &fader, &pan, &name, &mute, &solo })
             addAndMakeVisible (c);
     }
@@ -33,14 +33,14 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        using namespace theme::colours;
+        using namespace theme::lcd;
         auto r = getLocalBounds().toFloat().reduced (2.0f);
-        g.setColour (screen.brighter (0.03f));
-        g.fillRoundedRectangle (r, 4.0f);
+        g.setColour (text.withAlpha (0.04f));
+        g.fillRect (r);
         if (showMeter)
         {
             auto m = fader.getBounds().toFloat().withTrimmedBottom (20.0f).removeFromRight (5.0f).translated (4.0f, 0.0f);
-            g.setColour (screen.darker (0.4f));
+            g.setColour (text.withAlpha (0.1f));
             g.fillRect (m);
             const float db = juce::Decibels::gainToDecibels (meter, -60.0f);
             const float frac = juce::jmap (db, -60.0f, 6.0f, 0.0f, 1.0f);
@@ -90,7 +90,7 @@ public:
         addAndMakeVisible (tracksTab);
         addAndMakeVisible (title);
         title.setFont (theme::screenFont (12.0f));
-        title.setColour (juce::Label::textColourId, theme::colours::textDim);
+        title.setColour (juce::Label::textColourId, theme::lcd::textDim);
 
         for (int i = 0; i < kPadsPerBank; ++i)
         {

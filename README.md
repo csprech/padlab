@@ -4,6 +4,14 @@ A desktop sampling groove workstation built for research. It reproduces the work
 
 C++20 / JUCE 8, macOS (Apple Silicon tested). The core is platform-neutral.
 
+## Look
+
+The look is modelled on a classic 90s hardware sampler, with no third-party logos or panel artwork:
+- Warm grey speckled chassis, a darker pad deck, screws and silkscreened section labels (DIN Condensed).
+- Dark grey rubber pads that sink when struck, with printed labels and status LEDs.
+- Rubber key caps with red/green LEDs and knurled Q-Link knobs.
+- A backlit green dot-matrix LCD with pixel grid, vignette and glass sheen. Everything on the screen is drawn in one ink colour using VT323 (SIL Open Font License, `assets/fonts/VT323-OFL.txt`).
+
 ## Build & run
 
 ```sh

@@ -23,8 +23,8 @@ void setupCombo (juce::ComboBox& c, const juce::StringArray& items, int firstId)
 
 Caption::Caption (const juce::String& text) : juce::Label ({}, text.toUpperCase())
 {
-    setFont (theme::labelFont (10.5f, true));
-    setColour (juce::Label::textColourId, theme::colours::textDim);
+    setFont (theme::screenFont (10.5f, true));
+    setColour (juce::Label::textColourId, theme::lcd::textDim);
     setJustificationType (juce::Justification::bottomLeft);
     setInterceptsMouseClicks (false, false);
 }
@@ -92,10 +92,8 @@ void Waveform::rebuild()
 
 void Waveform::paint (juce::Graphics& g)
 {
-    using namespace theme::colours;
+    using namespace theme::lcd;
     auto r = getLocalBounds();
-    g.setColour (screen.darker (0.3f));
-    g.fillRect (r);
     g.setColour (grid);
     g.drawHorizontalLine (r.getCentreY(), 0.0f, (float) r.getWidth());
 
@@ -134,9 +132,9 @@ void Waveform::paint (juce::Graphics& g)
         const int x = xFor (markers[i]);
         g.setColour (text.withAlpha (0.8f));
         g.drawVerticalLine (x, 0.0f, (float) r.getHeight());
-        g.setColour (juce::Colours::black.withAlpha (0.7f));
-        g.fillRect (x, 0, 22, 14);
         g.setColour (text);
+        g.fillRect (x, 0, 22, 14);
+        g.setColour (screen);
         g.drawText (juce::String ((int) i + 1), x + 2, 0, 20, 14, juce::Justification::centredLeft);
     }
     if (playhead >= 0)

@@ -16,17 +16,17 @@ public:
     void setThreshold (float gain) { threshold = gain; }
     void paint (juce::Graphics& g) override
     {
-        using namespace theme::colours;
+        using namespace theme::lcd;
         auto r = getLocalBounds().toFloat();
         for (int c = 0; c < 2; ++c)
         {
             auto bar = r.removeFromTop (r.getHeight() / (2 - c)).reduced (0, 2);
-            g.setColour (screen.darker (0.3f));
-            g.fillRoundedRectangle (bar, 2.0f);
+            g.setColour (text.withAlpha (0.08f));
+            g.fillRect (bar);
             const float db = juce::Decibels::gainToDecibels (levels[(size_t) c], -60.0f);
             const float frac = juce::jmap (db, -60.0f, 0.0f, 0.0f, 1.0f);
             g.setColour (db > -3.0f ? record : db > -12.0f ? accent : play);
-            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * frac), 2.0f);
+            g.fillRect (bar.withWidth (bar.getWidth() * frac));
             if (threshold > 0.0f)
             {
                 const float tf = juce::jmap (juce::Decibels::gainToDecibels (threshold, -60.0f), -60.0f, 0.0f, 0.0f, 1.0f);
@@ -48,7 +48,7 @@ public:
     {
         addAndMakeVisible (status);
         status.setFont (theme::screenFont (22.0f, true));
-        status.setColour (juce::Label::textColourId, theme::colours::text);
+        status.setColour (juce::Label::textColourId, theme::lcd::text);
 
         setupCombo (source, { "Audio input 1/2", "Resample (master out)" });
         source.setSelectedId (1, juce::dontSendNotification);
@@ -90,8 +90,8 @@ public:
                                                                     &capSource, &capThreshold, &capMax, &capName, &capMeter,
                                                                     &help })
             addAndMakeVisible (comp);
-        help.setFont (theme::labelFont (12.0f));
-        help.setColour (juce::Label::textColourId, theme::colours::textDim);
+        help.setFont (theme::screenFont (12.0f));
+        help.setColour (juce::Label::textColourId, theme::lcd::textDim);
         help.setText ("ARM waits for the signal to cross the threshold, then records until you press STOP or the max length. "
                       "Resample records Padlab's own output - play pads or the sequence while armed.",
                       juce::dontSendNotification);
@@ -127,9 +127,9 @@ public:
             text = "RECORDED " + juce::String (pending != nullptr ? pending->getLengthSeconds() : 0.0, 2) + " s";
         }
         status.setText (text, juce::dontSendNotification);
-        status.setColour (juce::Label::textColourId, st == Engine::RecState::Recording ? theme::colours::record
-                                                     : st == Engine::RecState::Armed ? theme::colours::accent
-                                                                                      : theme::colours::text);
+        status.setColour (juce::Label::textColourId, st == Engine::RecState::Recording ? theme::lcd::record
+                                                     : st == Engine::RecState::Armed ? theme::lcd::accent
+                                                                                      : theme::lcd::text);
         if (st != lastState)
             refreshButtons();
         lastState = st;

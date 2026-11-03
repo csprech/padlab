@@ -8,12 +8,12 @@ PadGrid::PadGrid (AppContext& c) : ctx (c) { startTimerHz (40); }
 
 juce::Rectangle<float> PadGrid::padBounds (int i) const
 {
-    const float gap = 10.0f;
-    const float size = juce::jmin ((getWidth() - gap * 3) / 4.0f, (getHeight() - gap * 5) / 4.0f);
-    const float ox = (getWidth() - (size * 4 + gap * 3)) * 0.5f;
-    const float oy = (getHeight() - (size * 4 + gap * 3)) * 0.5f;
+    auto area = getLocalBounds().toFloat().reduced (kMargin);
+    const float size = juce::jmin ((area.getWidth() - kGap * 3) / 4.0f, (area.getHeight() - kGap * 3 - kLabelH * 4) / 4.0f);
+    const float ox = area.getX() + (area.getWidth() - (size * 4 + kGap * 3)) * 0.5f;
+    const float oy = area.getY() + (area.getHeight() - ((size + kLabelH) * 4 + kGap * 3)) * 0.5f;
     const int col = i % 4, row = 3 - i / 4; // pad 1 bottom-left
-    return { ox + col * (size + gap), oy + row * (size + gap), size, size };
+    return { ox + col * (size + kGap), oy + row * (size + kLabelH + kGap), size, size };
 }
 
 int PadGrid::padAt (juce::Point<int> p) const
@@ -120,7 +120,7 @@ void PadGrid::timerCallback()
         }
         if (glow[(size_t) i] > 0.0f)
         {
-            glow[(size_t) i] = juce::jmax (0.0f, glow[(size_t) i] - 0.08f);
+            glow[(size_t) i] = juce::jmax (0.0f, glow[(size_t) i] - 0.12f);
             dirty = true;
         }
     }
@@ -163,74 +163,81 @@ void PadGrid::paint (juce::Graphics& g)
 
     for (int i = 0; i < kPadsPerBank; ++i)
     {
-        auto r = padBounds (i);
+        const auto r = padBounds (i);
         const int pad = bank * kPadsPerBank + i;
-        const float gl = glow[(size_t) i];
+        const float hit = glow[(size_t) i];
 
-        // well + rubber pad
-        g.setColour (colours::bodyEdge);
-        g.fillRoundedRectangle (r.expanded (3.0f), 9.0f);
+        // recess in the deck
+        g.setColour (juce::Colours::black.withAlpha (0.30f));
+        g.fillRoundedRectangle (r.expanded (5.0f).translated (0, -0.5f), 9.0f);
+        g.setColour (colours::deck.darker (0.45f));
+        g.fillRoundedRectangle (r.expanded (3.5f), 8.0f);
 
-        juce::Colour base = colours::pad;
-        juce::String label = AppContext::padName (pad);
-        juce::String sub = names[(size_t) i];
-        juce::Colour ring = juce::Colours::transparentBlack;
+        // the rubber pad sinks when hit
+        const float press = juce::jmin (1.0f, hit * 1.2f);
+        auto p = r.reduced (press * 1.2f).translated (0, press * 1.8f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillRoundedRectangle (p.translated (0, 3.5f - press * 2.5f), 7.0f);
+
+        const auto base = colours::rubber.darker (press * 0.22f);
+        juce::ColourGradient body (base.brighter (0.16f), p.getCentreX(), p.getY() + p.getHeight() * 0.32f,
+                                   base.darker (0.28f), p.getX(), p.getBottom(), true);
+        g.setGradientFill (body);
+        g.fillRoundedRectangle (p, 7.0f);
+        g.setTiledImageFill (speckle (1), 0, 0, 1.0f);
+        g.fillRoundedRectangle (p, 7.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.13f * (1.0f - press)), p.getX(), p.getY(),
+                                                 juce::Colours::transparentWhite, p.getX(), p.getY() + p.getHeight() * 0.3f, false));
+        g.fillRoundedRectangle (p.reduced (1.5f), 6.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawRoundedRectangle (p, 7.0f, 1.0f);
+
+        if (dragHover == i)
+        {
+            g.setColour (colours::ledAmber.withAlpha (0.9f));
+            g.drawRoundedRectangle (r.expanded (2.0f), 8.0f, 2.5f);
+        }
+
+        // printed label + status LED under the pad
+        auto label = juce::Rectangle<float> (r.getX(), r.getBottom() + 5.0f, r.getWidth(), kLabelH - 4.0f);
+        juce::String top = AppContext::padName (pad), sub = names[(size_t) i].toUpperCase();
+        juce::Colour ledColour = colours::ledRed;
+        float led = juce::jmax (hit, pad == selected ? 0.45f : 0.0f);
 
         if (view == PadView::TrackMute)
         {
+            ledColour = colours::ledGreen;
             if (i < kNumTracks)
             {
-                label = "TRACK " + juce::String (i + 1);
+                top = "TRACK " + juce::String (i + 1);
                 sub = trackMuted[(size_t) i] ? "MUTED" : "ON";
-                ring = trackMuted[(size_t) i] ? colours::textDim.withAlpha (0.4f) : colours::play;
+                led = trackMuted[(size_t) i] ? 0.0f : 1.0f;
             }
             else
             {
-                label = {};
+                top = {};
                 sub = {};
+                led = 0.0f;
             }
         }
         else if (view == PadView::PadMute)
         {
-            sub = padMuted[(size_t) i] ? "MUTED" : sub;
-            ring = hasSample[(size_t) i] ? (padMuted[(size_t) i] ? colours::textDim.withAlpha (0.4f) : colours::accent2) : ring;
-        }
-        else if (hasSample[(size_t) i])
-        {
-            ring = colours::accent.withAlpha (0.25f);
+            ledColour = colours::ledGreen;
+            led = hasSample[(size_t) i] && ! padMuted[(size_t) i] ? 1.0f : 0.0f;
+            if (padMuted[(size_t) i])
+                sub = "MUTED";
         }
 
-        if (gl > 0.0f)
-            base = base.interpolatedWith (padGlow (gl), juce::jmin (1.0f, gl * 1.1f));
-
-        g.setGradientFill (juce::ColourGradient (base.brighter (0.12f), r.getX(), r.getY(), base.darker (0.2f),
-                                                 r.getX(), r.getBottom(), false));
-        g.fillRoundedRectangle (r, 7.0f);
-        g.setColour (colours::padEdge.withAlpha (0.6f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
-
-        if (! ring.isTransparent())
-        {
-            g.setColour (ring);
-            g.drawRoundedRectangle (r.reduced (3.0f), 5.0f, 2.0f);
-        }
-        if (pad == selected && view == PadView::Play)
-        {
-            g.setColour (colours::text.withAlpha (0.85f));
-            g.drawRoundedRectangle (r.reduced (1.5f), 7.0f, 2.0f);
-        }
-        if (dragHover == i)
-        {
-            g.setColour (colours::accent2);
-            g.drawRoundedRectangle (r.reduced (1.0f), 7.0f, 3.0f);
-        }
-
-        g.setColour (gl > 0.3f ? juce::Colours::black.withAlpha (0.8f) : colours::text.withAlpha (0.75f));
-        g.setFont (labelFont (12.0f, true));
-        g.drawText (label, r.reduced (8.0f, 6.0f).toNearestInt(), juce::Justification::topLeft);
-        g.setFont (labelFont (11.0f));
-        g.setColour (gl > 0.3f ? juce::Colours::black.withAlpha (0.7f) : colours::textDim);
-        g.drawFittedText (sub, r.reduced (8.0f, 6.0f).toNearestInt(), juce::Justification::bottomLeft, 2);
+        const float d = 6.0f;
+        drawLed (g, { label.getX() + 1.0f, label.getCentreY() - d * 0.5f, d, d }, ledColour, led);
+        auto textArea = label.withTrimmedLeft (d + 6.0f).toNearestInt();
+        g.setColour (colours::silk);
+        g.setFont (labelFont (12.0f));
+        const int topW = (int) std::ceil (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), top)) + 6;
+        g.drawText (top, textArea.removeFromLeft (topW), juce::Justification::centredLeft);
+        g.setColour (colours::silk.withAlpha (0.7f));
+        g.setFont (labelFont (10.5f));
+        g.drawFittedText (sub, textArea, juce::Justification::centredLeft, 1, 0.8f);
     }
 }
 
