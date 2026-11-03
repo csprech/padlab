@@ -644,16 +644,12 @@ void MainComponent::saveProject (bool saveAs)
 {
     auto doSave = [this] (const juce::File& dir) {
         juce::String err;
-        bool ok = false;
-        // copy under the lock, write without holding it
-        Project copy;
-        engine.withProject ([&] (Project& p) {
-            copy = p;
-            copy.name = dir.getFileNameWithoutExtension();
-            p.name = copy.name;
+        // capture under the lock (cheap), write files without holding it
+        const auto job = engine.withProject ([&] (Project& p) {
+            p.name = dir.getFileNameWithoutExtension();
+            return projectio::prepareSave (p);
         });
-        ok = projectio::save (copy, dir, err);
-        if (! ok)
+        if (! projectio::writeSave (job, dir, err))
         {
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't save project", err);
             return;

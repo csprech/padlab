@@ -42,6 +42,7 @@ private:
     std::array<juce::String, kPadsPerBank> names;
     std::array<bool, kPadsPerBank> hasSample {}, padMuted {}, trackMuted {};
     int mousePad = -1;
+    std::array<int, kPadsPerBank> pressedAbs = [] { std::array<int, kPadsPerBank> a {}; a.fill (-1); return a; }();
     int dragHover = -1;
 };
 

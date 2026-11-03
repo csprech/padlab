@@ -242,7 +242,26 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
     return true;
 }
 
-bool save (const Project& p, const juce::File& folder, juce::String& error)
+SaveJob prepareSave (const Project& p)
+{
+    SaveJob job;
+    std::map<const Sample*, juce::String> files;
+    juce::StringArray used;
+    for (auto& s : p.samplePool)
+    {
+        auto base = safeFileName (s->name);
+        auto fname = base + ".wav";
+        for (int i = 2; used.contains (fname, true); ++i)
+            fname = base + "_" + juce::String (i) + ".wav";
+        used.add (fname);
+        files[s.get()] = fname;
+        job.files.emplace_back (s, fname);
+    }
+    job.json = toJson (p, files);
+    return job;
+}
+
+bool writeSave (const SaveJob& job, const juce::File& folder, juce::String& error)
 {
     if (! folder.createDirectory())
     {
@@ -253,30 +272,24 @@ bool save (const Project& p, const juce::File& folder, juce::String& error)
     samplesDir.deleteRecursively();
     samplesDir.createDirectory();
 
-    std::map<const Sample*, juce::String> files;
-    juce::StringArray used;
-    for (auto& s : p.samplePool)
-    {
-        auto base = safeFileName (s->name);
-        auto fname = base + ".wav";
-        for (int i = 2; used.contains (fname, true); ++i)
-            fname = base + "_" + juce::String (i) + ".wav";
-        used.add (fname);
-        if (! sampleops::writeWav (*s, samplesDir.getChildFile (fname)))
+    for (auto& [sample, fname] : job.files)
+        if (! sampleops::writeWav (*sample, samplesDir.getChildFile (fname)))
         {
             error = "Couldn't write sample " + fname;
             return false;
         }
-        files[s.get()] = fname;
-    }
 
-    auto json = juce::JSON::toString (toJson (p, files), false);
-    if (! folder.getChildFile ("project.json").replaceWithText (json))
+    if (! folder.getChildFile ("project.json").replaceWithText (juce::JSON::toString (job.json, false)))
     {
         error = "Couldn't write project.json";
         return false;
     }
     return true;
+}
+
+bool save (const Project& p, const juce::File& folder, juce::String& error)
+{
+    return writeSave (prepareSave (p), folder, error);
 }
 
 bool load (const juce::File& folder, Project& out, juce::String& error)

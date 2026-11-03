@@ -129,16 +129,22 @@ void Engine::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessag
     if (m.isNoteOn())
     {
         if (auto p = toPad (m.getNoteNumber()); p >= 0)
+        {
+            midiNotePad[(size_t) m.getNoteNumber()] = p;
             pushPad ({ LiveInput::PadDown, p, m.getVelocity(), 0 }, true);
+        }
     }
     else if (m.isNoteOff())
     {
-        if (auto p = toPad (m.getNoteNumber()); p >= 0)
+        if (auto p = midiNotePad[(size_t) m.getNoteNumber()]; p >= 0)
+        {
+            midiNotePad[(size_t) m.getNoteNumber()] = -1;
             pushPad ({ LiveInput::PadUp, p, 0, 0 }, true);
+        }
     }
     else if (m.isAftertouch())
     {
-        if (auto p = toPad (m.getNoteNumber()); p >= 0)
+        if (auto p = midiNotePad[(size_t) m.getNoteNumber()]; p >= 0)
             pushPad ({ LiveInput::Pressure, p, m.getAfterTouchValue(), 0 }, true);
     }
     else if (m.isChannelPressure())
@@ -235,13 +241,17 @@ void Engine::stopPreview()
 
 void Engine::armSampling (bool resampleMaster, float thresholdDb, double maxSeconds)
 {
-    const juce::SpinLock::ScopedLockType sl (lock);
     const int frames = (int) (std::clamp (maxSeconds, 1.0, 120.0) * sampleRate.load());
+    juce::AudioBuffer<float> fresh;
     if (recBuffer.getNumSamples() < frames)
-        recBuffer.setSize (2, frames, false, true, false);
+        fresh.setSize (2, frames); // allocate outside the audio lock
+
+    const LockGuard g (*this);
+    if (fresh.getNumSamples() > 0)
+        std::swap (recBuffer, fresh); // old buffer is freed on this (message) thread
     recMaxFrames = frames;
     recResample = resampleMaster;
-    recThreshold = thresholdDb <= -90.0f ? 0.0f : dbToGain (thresholdDb);
+    recThreshold = thresholdDb <= -60.5f ? 0.0f : dbToGain (thresholdDb);
     recWritten = 0;
     recStopRequest = false;
     recState = (int) RecState::Armed;
@@ -255,18 +265,16 @@ SamplePtr Engine::takeSampledAudio (const juce::String& name)
 {
     if (getSamplingState() != RecState::Done)
         return nullptr;
+    // Once Done, the audio thread no longer touches recBuffer, so copy without the lock.
     auto s = std::make_shared<Sample>();
     s->name = name;
     s->sampleRate = sampleRate.load();
-    {
-        const juce::SpinLock::ScopedLockType sl (lock);
-        const int n = std::max (1, recWritten.load());
-        s->buffer.setSize (2, n);
-        for (int c = 0; c < 2; ++c)
-            s->buffer.copyFrom (c, 0, recBuffer, c, 0, n);
-        recState = (int) RecState::Idle;
-        recWritten = 0;
-    }
+    const int n = std::max (1, recWritten.load());
+    s->buffer.setSize (2, n);
+    for (int c = 0; c < 2; ++c)
+        s->buffer.copyFrom (c, 0, recBuffer, c, 0, n);
+    recWritten = 0;
+    recState = (int) RecState::Idle;
     return s;
 }
 

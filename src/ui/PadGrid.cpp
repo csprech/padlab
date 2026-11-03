@@ -62,6 +62,7 @@ void PadGrid::press (int i, int velocity)
             break;
     }
     ctx.engine.padDown (pad, velocity);
+    pressedAbs[(size_t) i] = pad;
     if (! ctx.engine.getSettings().sixteenLevels)
         ctx.setSelectedPad (pad);
     flashPad (i, velocity);
@@ -69,8 +70,10 @@ void PadGrid::press (int i, int velocity)
 
 void PadGrid::release (int i)
 {
-    if (ctx.padView == PadView::Play)
-        ctx.engine.padUp (ctx.engine.getCurrentBank() * kPadsPerBank + i);
+    // release the pad that was actually pressed, even if the bank changed meanwhile
+    if (pressedAbs[(size_t) i] >= 0)
+        ctx.engine.padUp (pressedAbs[(size_t) i]);
+    pressedAbs[(size_t) i] = -1;
 }
 
 void PadGrid::flashPad (int i, int velocity)
@@ -89,8 +92,8 @@ void PadGrid::mouseDown (const juce::MouseEvent& e)
 void PadGrid::mouseDrag (const juce::MouseEvent& e)
 {
     // dragging while held = aftertouch / pressure (drives note repeat velocity)
-    if (mousePad >= 0 && ctx.padView == PadView::Play)
-        ctx.engine.padPressure (ctx.engine.getCurrentBank() * kPadsPerBank + mousePad, velocityFor (mousePad, e.getPosition()));
+    if (mousePad >= 0 && pressedAbs[(size_t) mousePad] >= 0)
+        ctx.engine.padPressure (pressedAbs[(size_t) mousePad], velocityFor (mousePad, e.getPosition()));
 }
 
 void PadGrid::mouseUp (const juce::MouseEvent&)

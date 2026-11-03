@@ -181,6 +181,7 @@ private:
     Fifo<Command, 256> commands;
 
     std::atomic<int> currentBank { 0 };
+    std::array<int, 128> midiNotePad = [] { std::array<int, 128> a {}; a.fill (-1); return a; }(); // MIDI thread only
     std::atomic<int> uiState { 0 }, uiRecordMode { 0 }, uiSequence { 0 }, uiQueued { -1 };
     std::atomic<double> uiPosition { 0.0 }, uiCountIn { 0.0 };
     std::array<std::atomic<uint32_t>, kNumPads> padHits {};
