@@ -804,6 +804,12 @@ public:
         autoOverdub.onClick = [this] {
             ctx.engine.updateSettings ([v = autoOverdub.getToggleState()] (PerformanceSettings& s) { s.autoOverdub = v; });
         };
+        setupParam (shift, -48, 48, 1, " ticks");
+        shift.setTooltip ("TIMING SHIFT: after timing correct, notes land this many ticks late (+) or early (-). 960 ticks per beat.");
+        shift.onValueChange = [this] {
+            if (! loading)
+                ctx.engine.updateSettings ([v = (int) shift.getValue()] (PerformanceSettings& s) { s.shiftTicks = v; });
+        };
         midiClock.setButtonText ("Send MIDI clock");
         midiClock.setTooltip ("Clock, start/stop and song position to the MIDI output chosen in DISK > Audio / MIDI setup");
         midiClock.onClick = [this] {
@@ -824,7 +830,7 @@ public:
                                                                     &secVar, &capNvType, &nvType, &capNvTarget, &nvTarget, &nvOn,
                                                                     &capSixteen, &sixteenParam, &secTiming, &metronome,
                                                                     &clickRecOnly, &countIn, &autoOverdub, &capTcStrength,
-                                                                    &tcStrength, &midiClock, &midiInfo })
+                                                                    &tcStrength, &capShift, &shift, &midiClock, &midiInfo })
             addAndMakeVisible (comp);
         for (auto* l : { &secSound, &secVar, &secTiming })
         {
@@ -870,6 +876,7 @@ public:
         row = r.removeFromTop (40);
         autoOverdub.setBounds (row.removeFromLeft (310).withTrimmedTop (14).withHeight (24));
         placeField (row, capTcStrength, tcStrength, 140);
+        placeField (row, capShift, shift, 120);
         r.removeFromTop (10);
         midiClock.setBounds (r.removeFromTop (26).removeFromLeft (220));
         r.removeFromTop (4);
@@ -894,6 +901,7 @@ public:
         autoOverdub.setToggleState (s.autoOverdub, juce::dontSendNotification);
         tcStrength.setValue (s.tcStrength * 100.0, juce::dontSendNotification);
         midiClock.setToggleState (ctx.engine.getSendMidiClock(), juce::dontSendNotification);
+        shift.setValue (s.shiftTicks, juce::dontSendNotification);
         if (nvTarget.getSelectedId() == 1)
             applyTarget(); // the selected pad changed
     }
@@ -910,7 +918,8 @@ private:
     Caption capVintage { "Converter character" }, capMaster { "Master level" }, capNvType { "Slider controls" },
         capNvTarget { "Applies to" }, capSixteen { "16 levels by" }, capTcStrength { "Timing correct strength" };
     juce::ComboBox vintage, nvType, nvTarget, sixteenParam;
-    juce::Slider masterLevel, tcStrength;
+    juce::Slider masterLevel, tcStrength, shift;
+    Caption capShift { "Timing shift" };
     juce::ToggleButton nvOn, metronome, clickRecOnly, countIn, autoOverdub, midiClock;
 };
 } // namespace

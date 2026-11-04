@@ -60,9 +60,10 @@ Chops aren't saved until you convert them, so you can try as many as you like.)"
 3. REC (,) records and replaces the track on the first pass, then switches to overdub. OVERDUB (.) always adds. Press PLAY after arming; with COUNT-IN on you get one bar of clicks first.
 4. Hold ERASE and hold a pad while playing to remove that pad's notes.
 5. UNDO SEQ (Cmd-Z) takes back the last recording or edit.
+6. For push or drag, set TIMING SHIFT in OTHER: notes land a few ticks early or late after timing correct.
 Each sequence has 8 tracks; pick the track in the track strip at the bottom of MAIN, and give it a program. Sequence changes you make while playing happen at the end of the loop.)" },
 
-    { "Note repeat, 16 levels, full level", R"(# Note repeat, 16 levels, full level
+    { "Note repeat & 16 levels", R"(# Note repeat, 16 levels, full level
 - NOTE REPEAT: hold the TAP TEMPO / NOTE REPEAT key and hold pads: they repeat at the NOTE REPEAT rate on MAIN, on the swung grid, louder the harder you press (drag up on a held pad). N latches it on. Tap the same key quickly for tap tempo.
 - FULL LEVEL: every hit at full velocity.
 - 16 LEVELS: hit the pad you want, press 16 LEVELS, and all 16 pads play that sound in 16 steps of velocity - or tune, decay, attack or filter (choose in OTHER).

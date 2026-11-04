@@ -357,6 +357,21 @@ struct TransportTests : juce::UnitTest
             expectEquals ((int) h.triggersOf (1).size(), 0);
         }
         {
+            beginTest ("timing shift moves recorded notes after timing correct");
+            Harness h;
+            h.settings.timingCorrect = 3; // 1/16
+            h.settings.shiftTicks = 12;
+            h.transport.armRecord (RecordMode::Overdub);
+            h.transport.play (true, false);
+            h.input (960 * samplesPerTick + 40 * samplesPerTick, LiveInput::PadDown, 2); // a little after beat 2
+            h.run (barSamples / 2);
+            bool found = false;
+            for (auto& e : h.events())
+                if (e.pad == 2)
+                    found = e.tick == 960 + 12;
+            expect (found, "snapped to beat 2, then 12 ticks late");
+        }
+        {
             beginTest ("song mode plays each step's sequence its number of repeats, then stops");
             Harness h;
             for (int i : { 0, 1 })

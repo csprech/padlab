@@ -492,7 +492,7 @@ public:
                 auto evs = seq.tracks[(size_t) t].events;
                 const auto L = seq.getLengthTicks();
                 for (auto& e : evs)
-                    e.tick = ((timing::quantize (e.tick, div.ticks, div.swingable, s.swing, s.tcStrength, s.legacy96) % L) + L) % L;
+                    e.tick = ((timing::quantize (e.tick, div.ticks, div.swingable, s.swing, s.tcStrength, s.legacy96) + s.shiftTicks) % L + L) % L;
                 std::stable_sort (evs.begin(), evs.end(), [] (auto& a, auto& b) { return a.tick < b.tick; });
                 seq.tracks[(size_t) t].events.assign (evs.begin(), evs.end());
             });

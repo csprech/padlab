@@ -333,7 +333,7 @@ void Transport::recordHit (Project& p, const PerformanceSettings& s, int targetP
     const int64_t rawLocal = (int64_t) std::llround (rawUnwrapped - base);
 
     const auto& tc = division (s.timingCorrect);
-    int64_t q = timing::quantize (rawLocal, tc.ticks, tc.swingable, s.swing, s.tcStrength, s.legacy96);
+    int64_t q = timing::quantize (rawLocal, tc.ticks, tc.swingable, s.swing, s.tcStrength, s.legacy96) + s.shiftTicks;
     const double qUnwrapped = base + (double) q;
 
     NoteEvent e;

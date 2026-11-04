@@ -58,6 +58,7 @@ struct PerformanceSettings
     int timingCorrect = 3;            // index into timing::divisions()
     double swing = 50.0;
     double tcStrength = 1.0;
+    int shiftTicks = 0;               // TIMING SHIFT: recorded/quantized notes land this many ticks late (+) or early (-)
     bool legacy96 = false;
     bool eraseHeld = false;
     bool metronome = true;

@@ -59,6 +59,8 @@ open build/Padlab_artefacts/Release/Padlab.app
 
 Press **HELP** on the panel (under the floppy drive) or `?` for the same guides inside the app. HELP opens on the topic for the screen you're on.
 
+![The HELP screen](docs/help.png)
+
 ### Load sounds onto pads
 1. Drag audio files from Finder onto a pad. Several files fill the following pads.
 2. Or hit a pad to select it, open **PROGRAM** (F4) and press **LOAD** on layer 1. Layers 2–4 can hold more sounds for different velocities.
@@ -119,7 +121,7 @@ Press **HELP** on the panel (under the floppy drive) or `?` for the same guides 
 | **Note Variation** | The fader varies one parameter of the selected pad (or all pads) as you play: tune (±1 octave), decay (×¼ to ×4), attack (0–500 ms) or filter cutoff (±4 octaves). **AFTER** turns it on; **SHIFT + AFTER** (ASSIGN) picks the parameter. The value is recorded with each note and can be edited in STEP EDIT. MIDI CC 74 moves the fader. |
 | **Song** | 8 songs × 99 steps. Each step is a sequence plus a repeat count, and a song can loop back to any step. While the SONG screen is showing, **PLAY** plays the song from the selected step and **PLAY START** from step 1. The playing step is marked, and the song stops after the last step. **TO SEQUENCE** writes the whole song into an empty sequence. |
 | **Step Edit** | Every event on the current track, listed by position. Edit position, pad, velocity, length, tune and variation. **STEP < >** jumps from event to event. While stopped, hitting a pad inserts it at the cursor position. |
-| **Other** | Converter character (clean, **12-bit / 40 kHz era** or **16-bit warm** emulation on the master bus), master level, Note Variation and 16 Levels setup, metronome, count-in, auto-overdub, timing correct strength, and **MIDI clock out**. |
+| **Other** | Converter character (clean, **12-bit / 40 kHz era** or **16-bit warm** emulation on the master bus), master level, Note Variation and 16 Levels setup, metronome, count-in, auto-overdub, timing correct strength, **timing shift** (notes land up to ±48 ticks late or early after timing correct, for push or drag), and **MIDI clock out**. |
 | **MIDI sync** | **Send MIDI clock** (OTHER) sends 24 PPQN clock, Start / Continue / Stop and Song Position to the MIDI output chosen in DISK > Audio / MIDI setup, so drum machines and DAWs follow Padlab's tempo and transport. Starting mid-sequence sends Song Position, then Continue. |
 | **Sample Edit** | Chop by **Threshold** (spectral-flux transients), **Regions**, **BPM** or **Manual**, then edit the chops by hand in any mode (see "Chop a sample" above). Normalize, reverse, trim, or set a pad to play a single slice. **Convert slices to pads** can also write a sequence that replays the loop and set the tempo from the loop length. |
 | **Sampler** | Record from the audio input or **resample** the master output. Threshold-triggered start, input meters, then keep the recording on a pad (or keep and go straight to chopping). |
@@ -201,5 +203,5 @@ tests/         JUCE UnitTest suites for all of core/ (fixtures/: small MP3/M4A f
 - Time-stretch and warp.
 - Import of other samplers' program formats.
 - MIDI clock in (following an external clock), MIDI learn, MIDI program changes.
-- Punch in/out points and timing shift.
+- Auto punch in/out points.
 - The Save/Open file dialogs haven't been exercised by automated tests (the save/load code underneath has).
