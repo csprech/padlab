@@ -61,7 +61,7 @@ Chops aren't saved until you convert them, so you can try as many as you like.)"
 4. Hold ERASE and hold a pad while playing to remove that pad's notes.
 5. UNDO SEQ (Cmd-Z) takes back the last recording or edit.
 6. For push or drag, set TIMING SHIFT in OTHER: notes land a few ticks early or late after timing correct.
-Each sequence has 8 tracks; pick the track in the track strip at the bottom of MAIN, and give it a program. Sequence changes you make while playing happen at the end of the loop.)" },
+Each sequence has 64 tracks; pick the track in the track strip at the bottom of MAIN (the TR arrows page through them 8 at a time) and give it a program, or set its OUT to play an external instrument over MIDI. Sequence changes you make while playing happen at the end of the loop.)" },
 
     { "Note repeat & 16 levels", R"(# Note repeat, 16 levels, full level
 - NOTE REPEAT: hold the TAP TEMPO / NOTE REPEAT key and hold pads: they repeat at the NOTE REPEAT rate on MAIN, on the swung grid, louder the harder you press (drag up on a held pad). N latches it on. Tap the same key quickly for tap tempo.

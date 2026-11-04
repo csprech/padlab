@@ -31,7 +31,7 @@ UI performance:
 - Pads repaint individually.
 - On a smaller window, the screens are scaled as a whole (like a smaller display) instead of being squeezed. The minimum window size is 1280×800.
 
-Release build CPU: about 2% idle and about 17% while playing, mostly the pad hit animation.
+Release build: about 3% CPU idle and about 17% while playing (mostly the pad hit animation), about 140 MB of memory.
 
 ## Build & run
 
@@ -173,7 +173,7 @@ Double-press STOP to silence every voice. MIDI pad controllers: notes 36–51 pl
 
 ```
 src/core/      platform-neutral engine (unit-tested, no GUI)
-  Project      data model: samples, programs (128 pads x 4 layers), 16 sequences x 8 tracks, 8 songs
+  Project      data model: samples, 24 programs (128 pads x 4 layers), 99 sequences x 64 tracks, 8 songs
   Timing       timing correct + swing math
   Transport    sequencer: playback, loop, record/overdub, note repeat, erase, count-in, seq switching,
                song mode, note variation
