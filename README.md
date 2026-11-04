@@ -30,7 +30,7 @@ scripts/bootstrap.sh                       # fetches JUCE 8.0.15 into external/ 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 open build/Padlab_artefacts/Release/Padlab.app
-./build/PadlabTests_artefacts/Release/PadlabTests   # 128 engine checks
+./build/PadlabTests_artefacts/Release/PadlabTests   # engine + import checks
 ```
 
 ## The workflow
@@ -39,7 +39,7 @@ open build/Padlab_artefacts/Release/Padlab.app
 
 | Area | What it does |
 |---|---|
-| **Pads** | 4×4 pads, banks A–H (128 pads per program). Mouse: where you hit the pad sets the velocity (top = hardest), dragging while held = pressure, Shift = 127. Drop audio files on a pad to load them (several files fill consecutive pads). |
+| **Pads** | 4×4 pads, banks A–H (128 pads per program). Mouse: where you hit the pad sets the velocity (top = hardest), dragging while held = pressure, Shift = 127. Drop audio files on a pad to load them (several files fill consecutive pads). WAV, AIFF, FLAC and OGG load directly; **MP3, M4A and AAC are converted to WAV on import** (see below). |
 | **Programs** | 8 drum programs. Each pad has 4 velocity layers plus tune, level, pan, ADSR, an LP/HP/BP filter, mute (choke) groups 1–32, one-shot or note-on triggering, and poly or mono. |
 | **Sequencer** | 16 sequences × 8 tracks, 960 PPQN, 1–64 bars, time signatures from 2/4 to 7/4. Timing Correct from 1/4 to 1/32T with **swing 50–75%**: the second 16th of each 8th is delayed, so 66% gives a triplet feel. Optional **96 PPQN grid** snaps swing to late-80s resolution. |
 | **Recording** | **REC** replaces the track on the first pass, then auto-switches to overdub. **OVERDUB** merges. Count-in, metronome, and recording plays live hits immediately without double-triggering their quantized copies. Undo is available. |
@@ -49,6 +49,16 @@ open build/Padlab_artefacts/Release/Padlab.app
 | **Mixer** | Track strips (each track's program level/pan, mute, solo, meters), a pad mixer for the current bank, and a master fader. |
 | **DATA wheel** | Click any value on the screen (or a Q-Link) and turn the wheel to step it: drag around the wheel, scroll over it, or use `Up`/`Down` (`Shift` = ×10). Brackets on the LCD mark the field it edits. Lists step item by item; numbers step in tidy increments (e.g. 1 BPM). |
 | **Q-Links** | 4 knobs for the selected pad: tune, cutoff, resonance and decay. MIDI CC 70–73 controls them too. |
+
+### Importing MP3 / M4A
+
+Anywhere you can load a sound (dropping on a pad, **Load** in Program Edit), you can also use MP3, M4A or AAC. To replace a kit sound, select its pad and load the MP3. Padlab decodes the file with macOS's built-in decoder and keeps it as uncompressed audio, so it plays, chops and saves (as 24-bit WAV in the project) exactly like a WAV. The screen confirms with "Converted kick.mp3 to WAV". Your original file isn't touched.
+
+MP3 encoders add a little silence at the start and end of a file:
+- If the file has a LAME/Info header (LAME, ffmpeg, iTunes and most modern encoders write one), both are removed, so loops come out sample-exact and "Set tempo from loop" stays accurate.
+- If it doesn't, one-shots (kicks, snares) are trimmed to start 1 ms before their attack so they aren't late. A longer silence at the start is kept, because it's probably intentional.
+
+A 4-minute song converts in about a third of a second. Other platforms: MP3/M4A support depends on the OS decoder (the code path is macOS-tested).
 
 ### Keyboard
 
@@ -78,7 +88,7 @@ src/core/      platform-neutral engine (unit-tested, no GUI)
   ProjectIO    open project format
 src/engine/    Engine: audio/MIDI device I/O, threading, metronome, sampling, preview, undo
 src/ui/        hardware-style JUCE UI (screens, pads, Q-Links, transport)
-tests/         JUCE UnitTest suites for all of core/
+tests/         JUCE UnitTest suites for all of core/ (fixtures/: small MP3/M4A files for the import tests)
 ```
 
 **Real-time rules:**

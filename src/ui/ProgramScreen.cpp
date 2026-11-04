@@ -249,7 +249,8 @@ private:
 
     void loadIntoLayer (int i)
     {
-        chooser = std::make_unique<juce::FileChooser> ("Load sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+        chooser = std::make_unique<juce::FileChooser> ("Load sample (MP3/M4A are converted to WAV)", juce::File(),
+                                                       sampleops::supportedFileWildcard());
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [this, i] (const juce::FileChooser& fc) {
                                   auto f = fc.getResult();
@@ -257,7 +258,11 @@ private:
                                       return;
                                   auto s = sampleops::loadFile (f);
                                   if (s == nullptr)
+                                  {
+                                      if (ctx.flashMessage)
+                                          ctx.flashMessage ("Couldn't read " + f.getFileName());
                                       return;
+                                  }
                                   ctx.engine.withProject ([&] (Project& p) {
                                       s->name = p.makeUniqueSampleName (s->name);
                                       p.addSample (s);
@@ -268,6 +273,10 @@ private:
                                       p.layers[(size_t) i].sliceEnd = -1;
                                   });
                                   ctx.changed();
+                                  if (ctx.flashMessage)
+                                      ctx.flashMessage (sampleops::isCompressedAudioFile (f)
+                                                            ? "Converted " + f.getFileName() + " to WAV"
+                                                            : "Loaded " + f.getFileName());
                               });
     }
 

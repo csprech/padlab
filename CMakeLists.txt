@@ -86,9 +86,11 @@ target_sources(PadlabTests PRIVATE
   tests/TransportTests.cpp
   tests/SamplerTests.cpp
   tests/ChopTests.cpp
-  tests/ProjectIOTests.cpp)
+  tests/ProjectIOTests.cpp
+  tests/SampleOpsTests.cpp)
 target_include_directories(PadlabTests PRIVATE src)
-target_compile_definitions(PadlabTests PRIVATE ${PADLAB_JUCE_DEFS})
+target_compile_definitions(PadlabTests PRIVATE ${PADLAB_JUCE_DEFS}
+  PADLAB_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
 target_link_libraries(PadlabTests PRIVATE
   juce::juce_audio_basics
   juce::juce_audio_formats

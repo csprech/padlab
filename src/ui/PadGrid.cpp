@@ -302,7 +302,9 @@ void PadGrid::filesDropped (const juce::StringArray& files, int x, int y)
 
     const int bank = ctx.engine.getCurrentBank();
     const int prog = ctx.currentProgram();
-    int index = start, loaded = 0;
+    int index = start, loaded = 0, converted = 0;
+    juce::String lastName;
+    juce::StringArray failed;
     for (auto& f : files)
     {
         if (index >= kPadsPerBank)
@@ -312,7 +314,13 @@ void PadGrid::filesDropped (const juce::StringArray& files, int x, int y)
             continue;
         auto s = sampleops::loadFile (file);
         if (s == nullptr)
+        {
+            failed.add (file.getFileName());
             continue;
+        }
+        if (sampleops::isCompressedAudioFile (file))
+            ++converted;
+        lastName = file.getFileName();
         const int pad = bank * kPadsPerBank + index;
         SamplePtr old;
         ctx.engine.withProject ([&] (Project& p) {
@@ -333,8 +341,14 @@ void PadGrid::filesDropped (const juce::StringArray& files, int x, int y)
         ctx.setSelectedPad (bank * kPadsPerBank + start);
         ctx.changed();
         if (ctx.flashMessage)
-            ctx.flashMessage ("Loaded " + juce::String (loaded) + " sample" + (loaded > 1 ? "s" : ""));
+        {
+            const auto what = loaded == 1 ? lastName : juce::String (loaded) + " samples";
+            ctx.flashMessage ((converted > 0 ? "Converted " + what + " to WAV" : "Loaded " + what)
+                              + " on " + AppContext::padName (bank * kPadsPerBank + start));
+        }
     }
+    else if (! failed.isEmpty() && ctx.flashMessage)
+        ctx.flashMessage ("Couldn't read " + failed[0]);
     repaint();
 }
 
