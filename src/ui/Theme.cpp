@@ -188,7 +188,8 @@ void HardwareLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
     // knurled black knob (rendered per angle so the key light stays put while it turns)
     const float kr = radius * 0.66f;
     auto kb = juce::Rectangle<float> (kr * 2, kr * 2).withCentre (c);
-    materials::roundShadow (g, c, kr * 0.95f, kr * 0.5f);
+    // (the shadow is drawn on the panel behind the knob by MainComponent: drawn here, inside the slider,
+    //  it was clipped to the slider's square and showed a hard corner)
     const float sc = materials::scaleOf (g);
     const int d = (int) std::ceil (kb.getWidth() * sc);
     // one render per knob, refreshed only when its angle or size changes

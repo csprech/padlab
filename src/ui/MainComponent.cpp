@@ -767,6 +767,15 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
     }
     sectionHeader (g, "Q-LINK  /  SELECTED PAD", qlinkArea);
 
+    // ---- knob shadows, on the panel behind each knob (same geometry as HardwareLookAndFeel::drawRotarySlider)
+    for (auto* s : { &mainVolume, &recGain, &qlinks[0], &qlinks[1], &qlinks[2], &qlinks[3] })
+    {
+        const auto layout = s->getLookAndFeel().getSliderLayout (*s);
+        const auto area = layout.sliderBounds.toFloat().reduced (2.0f) + s->getPosition().toFloat();
+        const float kr = juce::jmin (area.getWidth(), area.getHeight()) / 2.0f * 0.66f;
+        materials::roundShadow (g, area.getCentre(), kr * 0.95f, kr * 0.5f);
+    }
+
     // ---- pad plate: a flat blue-grey plate set into the panel, with a darker column for the bank keys
     {
         auto plate = plateArea.toFloat();
