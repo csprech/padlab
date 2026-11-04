@@ -28,7 +28,8 @@ public:
         setupParam (sliceStart, 0, 1, 1);
         sliceStart.textFromValueFunction = [this] (double v) {
             auto smp = wave.getSample();
-            return smp != nullptr ? juce::String (v / smp->sampleRate * 1000.0, 1) + " ms" : juce::String ("-");
+            // two decimals: about one frame at 44.1 kHz, so nudging with the DATA wheel always shows
+            return smp != nullptr ? juce::String (v / smp->sampleRate * 1000.0, 2) + " ms" : juce::String ("-");
         };
         sliceStart.onValueChange = [this] {
             if (! loadingSlice && selected > 0)
@@ -78,16 +79,22 @@ public:
         setupCombo (loopBars, { "1 bar", "2 bars", "4 bars", "8 bars" });
         loopBars.setSelectedId (2, juce::dontSendNotification);
         convertBtn.onClick = [this] { convert(); };
+        setupCombo (voicing, { "Poly (overlap)", "Mono (one at a time)" });
+        voicing.setSelectedId (1, juce::dontSendNotification);
+        voicing.setTooltip ("How the chop pads play when you hit several: Poly lets them ring over each other, "
+                            "Mono cuts the last one off (they share a mute group)");
+        voicing.onChange = [this] { voicingChanged(); };
+        target.onChange = [this] { showTargetVoicing(); };
 
         for (auto* comp : std::initializer_list<juce::Component*> { &chopBtn, &clearBtn, &previewBtn, &stopBtn, &normalizeBtn,
                                                                     &reverseBtn, &trimBtn, &setSliceBtn, &target, &makeSeq,
                                                                     &fitTempo, &loopBars, &convertBtn, &capTarget, &capLoop,
-                                                                    &hint })
+                                                                    &voicing, &capVoicing, &hint })
             addAndMakeVisible (comp);
         hint.setFont (theme::screenFont (11.5f));
         hint.setColour (juce::Label::textColourId, theme::lcd::textDim);
-        hint.setText ("CLICK play slice  DBL/SHIFT-CLICK add  CMD/ALT-CLICK delete  DRAG move   "
-                      "KEYS: H chop  M mark  DEL delete  J/K prev/next  T trim  ? help",
+        hint.setText ("CLICK play  DBL/SHIFT-CLICK add  CMD/ALT-CLICK delete  DRAG move  WHEEL zoom  SHIFT-WHEEL pan   "
+                      "KEYS: H chop  M mark  DEL delete  J/K prev/next  T trim  0 show all",
                       juce::dontSendNotification);
         updateVisibility();
     }
@@ -116,6 +123,7 @@ public:
         if (ch == 'k') { selectSlice (selected + 1); return true; }
         if (ch == 't') { trimToSlice(); return true; }
         if (ch == 'p') { auditionSelected(); return true; }
+        if (ch == '0') { wave.showAll(); return true; }
         return false;
     }
 
@@ -145,6 +153,7 @@ public:
             }
         }
         wave.setSample (s);
+        showTargetVoicing();
         wave.setRegion (s != nullptr && (a > 0 || b >= 0) ? a : -1, b);
         title.setText ("PAD " + AppContext::padName (pad) + (s != nullptr ? "  " + s->name : juce::String()),
                        juce::dontSendNotification);
@@ -206,11 +215,13 @@ public:
 
         controls.removeFromTop (8);
         auto row3 = controls.removeFromTop (44);
-        place (row3, capTarget, target, W (110));
-        place (row3, capLoop, loopBars, W (84));
+        place (row3, capTarget, target, W (106));
+        place (row3, capVoicing, voicing, W (144));
+        place (row3, capLoop, loopBars, W (76));
         row3.removeFromTop (16);
-        makeSeq.setBounds (row3.removeFromLeft (W (150)).withHeight (24));
-        fitTempo.setBounds (row3.removeFromLeft (W (180)).withHeight (24));
+        makeSeq.setBounds (row3.removeFromLeft (W (132)).withHeight (24));
+        fitTempo.setBounds (row3.removeFromLeft (W (156)).withHeight (24));
+        row3.removeFromLeft (6);
         convertBtn.setBounds (row3.withHeight (26));
     }
 
@@ -295,6 +306,7 @@ private:
         if (wave.getSample() == nullptr || markers.empty())
             return;
         selected = juce::jlimit (0, (int) markers.size() - 1, i);
+        wave.reveal (markers[(size_t) selected]); // J / K while zoomed: follow the slice
         syncWave();
         auditionSelected();
     }
@@ -474,6 +486,7 @@ private:
         static const int barsFor[] = { 1, 2, 4, 8 };
         const int loopLen = barsFor[loopBars.getSelectedId() - 1];
         const auto slices = markers;
+        const auto chopVoicing = voicing.getSelectedId() == 2 ? chop::Voicing::Mono : chop::Voicing::Poly;
 
         ctx.engine.pushUndo ("convert chops");
         ctx.engine.withProject ([&] (Project& p) {
@@ -486,9 +499,9 @@ private:
                 l.sample = s;
                 l.sliceStart = slices[i];
                 l.sliceEnd = i + 1 < slices.size() ? slices[i + 1] : -1;
-                prog.pads[i].poly = PolyMode::Mono;
                 prog.pads[i].releaseMs = 10.0f;
             }
+            chop::setVoicing (prog, s.get(), chopVoicing);
 
             if (! seqToo)
                 return;
@@ -526,7 +539,47 @@ private:
         ctx.changed();
         if (ctx.flashMessage)
             ctx.flashMessage (juce::String ((int) slices.size()) + " slices -> Program " + juce::String (targetProg + 1)
-                              + (seqToo ? " + Track " + juce::String (targetProg + 1) : juce::String()));
+                              + (seqToo ? " + Track " + juce::String (targetProg + 1) : juce::String())
+                              + (chopVoicing == chop::Voicing::Mono ? ", mono" : ", poly"));
+    }
+
+    /** CHOPS PLAY: applies straight away to chops already converted into the target program,
+        and to every conversion after. */
+    void voicingChanged()
+    {
+        auto s = wave.getSample();
+        const auto v = voicing.getSelectedId() == 2 ? chop::Voicing::Mono : chop::Voicing::Poly;
+        const int targetProg = target.getSelectedId() - 1;
+        int changed = 0;
+        bool has = false;
+        ctx.engine.withProject ([&] (Project& p) { has = ! chop::chopPads (p.programs[(size_t) targetProg], s.get()).empty(); });
+        if (has)
+        {
+            ctx.engine.pushUndo ("chop voicing");
+            ctx.engine.withProject ([&] (Project& p) { changed = chop::setVoicing (p.programs[(size_t) targetProg], s.get(), v); });
+            ctx.changed();
+        }
+        const auto how = juce::String (v == chop::Voicing::Mono ? "mono (one at a time)" : "poly (they overlap)");
+        if (changed > 0)
+            flashMsg (juce::String (changed) + " chops in Program " + juce::String (targetProg + 1) + " now play " + how);
+        else
+            flashMsg ("Chops will play " + how + " when you convert");
+    }
+
+    /** Shows the voicing of the chops already in the target program (if this sample has some there). */
+    void showTargetVoicing()
+    {
+        auto s = wave.getSample();
+        const int targetProg = target.getSelectedId() - 1;
+        bool has = false;
+        auto v = chop::Voicing::Poly;
+        ctx.engine.withProject ([&] (Project& p) {
+            const auto& prog = p.programs[(size_t) targetProg];
+            has = ! chop::chopPads (prog, s.get()).empty();
+            v = chop::getVoicing (prog, s.get());
+        });
+        if (has)
+            voicing.setSelectedId (v == chop::Voicing::Mono ? 2 : 1, juce::dontSendNotification);
     }
 
     juce::Label title, info, hint;
@@ -537,10 +590,11 @@ private:
     std::vector<int> markers { 0 };
     int selected = -1;
 
-    juce::ComboBox mode, beats, target, loopBars;
+    juce::ComboBox mode, beats, target, loopBars, voicing;
     juce::Slider sensitivity, minTime, regions, bpm;
     Caption capMode { "Chop mode" }, capSens { "Sensitivity" }, capMin { "Min slice" }, capRegions { "Regions" },
-        capBpm { "Loop BPM" }, capBeats { "Slice every" }, capTarget { "Convert to" }, capLoop { "Loop length" };
+        capBpm { "Loop BPM" }, capBeats { "Slice every" }, capTarget { "Convert to" }, capLoop { "Loop length" },
+        capVoicing { "Chops play" };
     juce::TextButton chopBtn { "Chop" }, clearBtn { "Clear" }, previewBtn { "Play all" }, stopBtn { "Stop" },
         normalizeBtn { "Normalize" }, reverseBtn { "Reverse" }, trimBtn { "Trim to slice" },
         setSliceBtn { "Pad plays this slice" }, convertBtn { "Convert slices to pads" };

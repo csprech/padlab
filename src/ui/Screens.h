@@ -18,7 +18,9 @@ public:
     explicit Caption (const juce::String& text = {});
 };
 
-/** Draws a sample with slice markers, a highlighted region and an optional playhead. */
+/** Draws a sample with slice markers, a highlighted region and an optional playhead.
+    Zoom: the scroll wheel (or a trackpad pinch) zooms around the pointer, shift-wheel or a sideways
+    swipe pans, and the strip along the bottom shows where you are (drag it to move). */
 class Waveform : public juce::Component
 {
 public:
@@ -30,6 +32,18 @@ public:
     void setPlayhead (int frame) { if (frame != playhead) { playhead = frame; repaint(); } }
     int frameAt (int x) const;
     int xFor (int frame) const;
+
+    // ---- zoom
+    /** Shows frames start .. start + length (clamped); length <= 0 or the whole sample = not zoomed. */
+    void setView (int start, int length);
+    void showAll() { setView (0, 0); }
+    bool isZoomed() const { return viewLength > 0; }
+    int getViewStart() const { return viewLength > 0 ? viewStart : 0; }
+    int getViewLength() const;
+    /** Zooms by `factor` (> 1 = in) keeping the frame under x where it is. */
+    void zoomAround (int x, double factor);
+    /** If zoomed and `frame` is off screen, scrolls so it's in view. */
+    void reveal (int frame);
 
     void setEmptyText (const juce::String& t) { emptyText = t; repaint(); }
 
@@ -46,14 +60,22 @@ public:
     void mouseUp (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
     void mouseMove (const juce::MouseEvent& e) override;
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void mouseMagnify (const juce::MouseEvent& e, float scaleFactor) override;
 
 private:
     void rebuild();
+    juce::Rectangle<int> overviewBounds() const; // the position strip along the bottom, while zoomed
+    void panOverviewTo (int x);
     SamplePtr sample;
     std::vector<int> markers;
-    std::vector<std::pair<float, float>> peaks;
+    std::vector<std::pair<float, float>> peaks; // per pixel min / max (zoomed out)
+    std::vector<float> points;                  // per frame (zoomed in past one frame per pixel)
     int markerNear (int x) const; // index of a draggable marker within a few pixels, or -1
     int regionStart = -1, regionEnd = -1, selectedSlice = -1, playhead = -1, dragging = -1;
+    int viewStart = 0, viewLength = 0; // viewLength 0 = the whole sample
+    bool draggingOverview = false;
+    int overviewGrab = 0; // where in the visible window the overview strip was grabbed (frames)
     juce::String emptyText { "No sample on this pad - drop a file on a pad or record one in SAMPLER" };
 };
 

@@ -165,4 +165,69 @@ double estimateLoopBpm (const Sample& s, int bars)
     return bpm;
 }
 
+// ---------------------------------------------------------------- chop voicing
+
+std::vector<int> chopPads (const Program& program, const Sample* sample)
+{
+    std::vector<int> pads;
+    if (sample == nullptr)
+        return pads;
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        const auto& l = program.pads[(size_t) i].layers[0];
+        if (l.sample.get() == sample && (l.sliceStart > 0 || l.sliceEnd >= 0))
+            pads.push_back (i);
+    }
+    return pads;
+}
+
+Voicing getVoicing (const Program& program, const Sample* sample)
+{
+    const auto pads = chopPads (program, sample);
+    if (pads.empty())
+        return Voicing::Poly;
+    const int group = program.pads[(size_t) pads[0]].muteGroup;
+    if (group <= 0)
+        return Voicing::Poly;
+    for (int p : pads)
+        if (program.pads[(size_t) p].muteGroup != group)
+            return Voicing::Poly;
+    return Voicing::Mono;
+}
+
+int setVoicing (Program& program, const Sample* sample, Voicing v)
+{
+    const auto pads = chopPads (program, sample);
+    if (pads.empty())
+        return 0;
+    int group = 0;
+    if (v == Voicing::Mono)
+    {
+        if (getVoicing (program, sample) == Voicing::Mono)
+            group = program.pads[(size_t) pads[0]].muteGroup; // already one group: keep it
+        else
+        {
+            // the lowest group no other pad uses, so the chops don't start choking unrelated sounds
+            std::array<bool, 33> used {};
+            for (int i = 0; i < kNumPads; ++i)
+                if (std::find (pads.begin(), pads.end(), i) == pads.end())
+                    used[(size_t) juce::jlimit (0, 32, program.pads[(size_t) i].muteGroup)] = true;
+            group = 32;
+            for (int g = 1; g <= 32; ++g)
+                if (! used[(size_t) g])
+                {
+                    group = g;
+                    break;
+                }
+        }
+    }
+    for (int p : pads)
+    {
+        auto& pad = program.pads[(size_t) p];
+        pad.poly = v == Voicing::Mono ? PolyMode::Mono : PolyMode::Poly;
+        pad.muteGroup = group;
+    }
+    return (int) pads.size();
+}
+
 } // namespace padlab::chop

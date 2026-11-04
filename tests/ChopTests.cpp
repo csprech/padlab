@@ -1,5 +1,6 @@
 #include "core/Chop.h"
 #include "core/DrumSynth.h"
+#include "core/Sampler.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;
@@ -81,6 +82,70 @@ struct ChopTests : juce::UnitTest
             s.sampleRate = sr;
             s.buffer.setSize (1, (int) (sr * 60.0 / 90.0 * 8)); // two bars at 90
             expectWithinAbsoluteError (chop::estimateLoopBpm (s, 2), 90.0, 0.01);
+        }
+
+        beginTest ("chop voicing: mono chops cut each other off, poly chops overlap; other pads untouched");
+        {
+            auto loop = std::make_shared<Sample>();
+            loop->name = "loop";
+            loop->sampleRate = sr;
+            loop->buffer.setSize (1, (int) sr * 2);
+            loop->buffer.clear();
+            for (int i = 0; i < loop->buffer.getNumSamples(); ++i)
+                loop->buffer.setSample (0, i, 0.5f);
+            auto hat = std::make_shared<Sample> (*loop);
+            hat->name = "hat";
+
+            Program prog;
+            for (int i = 0; i < 4; ++i) // four chops on pads 1-4
+            {
+                auto& l = prog.pads[(size_t) i].layers[0];
+                l.sample = loop;
+                l.sliceStart = i * (int) sr / 2;
+                l.sliceEnd = i < 3 ? (i + 1) * (int) sr / 2 : -1;
+            }
+            prog.pads[4].layers[0].sample = loop; // the whole loop on pad 5: not a chop
+            prog.pads[5].layers[0].sample = hat;  // an open hi-hat already using mute group 1
+            prog.pads[5].muteGroup = 1;
+
+            expectEquals ((int) chop::chopPads (prog, loop.get()).size(), 4, "finds the four chops, not the whole-loop pad");
+            expect (chop::getVoicing (prog, loop.get()) == chop::Voicing::Poly);
+
+            expectEquals (chop::setVoicing (prog, loop.get(), chop::Voicing::Mono), 4);
+            expect (chop::getVoicing (prog, loop.get()) == chop::Voicing::Mono);
+            const int group = prog.pads[0].muteGroup;
+            expectEquals (group, 2, "takes a free group, not the hi-hat's");
+            for (int i = 0; i < 4; ++i)
+            {
+                expectEquals (prog.pads[(size_t) i].muteGroup, group);
+                expect (prog.pads[(size_t) i].poly == PolyMode::Mono);
+            }
+            expectEquals (prog.pads[4].muteGroup, 0, "the whole-loop pad is left alone");
+            expectEquals (prog.pads[5].muteGroup, 1, "so is the hi-hat");
+            chop::setVoicing (prog, loop.get(), chop::Voicing::Mono);
+            expectEquals (prog.pads[0].muteGroup, group, "setting mono again keeps the group");
+
+            auto voicesAfterTwoChops = [&prog] {
+                Sampler smp;
+                smp.prepare (sr);
+                juce::AudioBuffer<float> out (kMixChannels, 2048);
+                out.clear();
+                smp.trigger (prog, 0, 0, 127, 0.0f, -1);
+                smp.render (out, 0, 256);
+                smp.trigger (prog, 0, 1, 127, 0.0f, -1);
+                smp.render (out, 256, 1024); // past the 3 ms choke fade
+                return smp.getActiveVoiceCount();
+            };
+            expectEquals (voicesAfterTwoChops(), 1, "mono: the second chop cuts the first off");
+
+            expectEquals (chop::setVoicing (prog, loop.get(), chop::Voicing::Poly), 4);
+            for (int i = 0; i < 4; ++i)
+            {
+                expectEquals (prog.pads[(size_t) i].muteGroup, 0);
+                expect (prog.pads[(size_t) i].poly == PolyMode::Poly);
+            }
+            expectEquals (voicesAfterTwoChops(), 2, "poly: both chops ring");
+            expectEquals (prog.pads[5].muteGroup, 1, "the hi-hat keeps its group");
         }
     }
 };

@@ -48,8 +48,10 @@ Each pad has tune, level, pan, an envelope, a filter and a mute group in PROGRAM
 - DELETE removes the selected slice's chop; Cmd-DELETE clears them all.
 - Tap chops in time: press P (PLAY ALL) and press M wherever you want a cut.
 - J and K step to the previous / next slice.
+- Zoom in for exact placement: the scroll wheel (or a trackpad pinch) zooms around the pointer, right down to single samples. Shift + wheel (or a sideways swipe) scrolls along, or drag the strip along the bottom. 0 shows the whole sample again.
 6. Use the slices:
 - CONVERT SLICES TO PADS puts every slice on its own pad in the chosen program, and can write a sequence that plays the loop back and set the tempo from it.
+- CHOPS PLAY sets how the chop pads play when you hit several: POLY lets them ring over each other, MONO plays one at a time (each new chop cuts off the last; they share a mute group). Changing it also updates chops already converted into that program.
 - PAD PLAYS THIS SLICE makes the current pad play only the selected slice.
 - TRIM TO SLICE (T) makes a new sample from just that slice.
 Chops aren't saved until you convert them, so you can try as many as you like.)" },

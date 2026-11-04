@@ -89,9 +89,13 @@ Press **HELP** on the panel (under the floppy drive) or `?` for the same guides 
    | `P` then `M` | Play the sample and tap chops in time |
    | `J` / `K` | Previous / next slice |
    | `T` | Trim the sample to the selected slice |
+   | Scroll wheel / trackpad pinch | Zoom in around the pointer, down to single samples, for exact chop placement |
+   | Shift + wheel / sideways swipe | Scroll along while zoomed (or drag the position strip along the bottom) |
+   | `0` | Show the whole sample again |
 
 6. Use the slices:
    - **CONVERT SLICES TO PADS** puts each slice on its own pad. It can also write a sequence that replays the loop and set the tempo from it.
+   - **CHOPS PLAY** sets how the chop pads play when you hit several. **Poly** lets them ring over each other. **Mono** plays one at a time: each new chop cuts off the last, because they share a mute group (one no other pad uses). Changing it also updates chops already converted into that program.
    - **PAD PLAYS THIS SLICE** sets the current pad to play only the selected slice.
 
 ### Record a beat
@@ -178,7 +182,7 @@ A 4-minute song converts in about a third of a second. Other platforms: MP3/M4A 
 | `N` / `L` | Latch Note Repeat / Full Level |
 | `F1`–`F6` | Soft keys: Main, Step Edit, Song, Program, Trim (sample edit), Mixer |
 | `?` | HELP (opens on the topic for the current screen) |
-| In TRIM: `H` `M` `Delete` `J` `K` `P` `T` | Chop, mark a chop, delete chop (`Cmd-Delete` clears), previous / next slice, play slice, trim to slice |
+| In TRIM: `H` `M` `Delete` `J` `K` `P` `T` `0` | Chop, mark a chop, delete chop (`Cmd-Delete` clears), previous / next slice, play slice, trim to slice, show the whole sample (after zooming with the wheel) |
 | `Cmd-Z` / `Cmd-S` / `Cmd-Shift-S` / `Cmd-O` / `Cmd-N` | Undo / Save / Save As / Open / New |
 
 Double-press STOP to silence every voice. MIDI controllers are covered in "Use a MIDI controller" above.
