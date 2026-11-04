@@ -63,7 +63,9 @@ juce::Image paintTile (juce::Colour base, int size, float roughness = 1.0f, uint
 /** Draws an image rendered at device resolution into a logical rectangle. */
 void drawAt (juce::Graphics& g, const juce::Image& img, juce::Rectangle<float> dest, float opacity = 1.0f);
 
-/** Soft, round contact shadow under an object. */
-void contactShadow (juce::Graphics& g, juce::Rectangle<float> footprint, float softness, float offsetY, float strength);
+/** Shadow of a round object standing on the panel (knobs): a tight contact shadow where it meets
+    the panel plus a soft cast shadow thrown away from the top-left light. height = how tall it
+    stands, in the same units as radius. */
+void roundShadow (juce::Graphics& g, juce::Point<float> centre, float radius, float height, float strength = 1.0f);
 
 } // namespace padlab::materials

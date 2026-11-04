@@ -384,16 +384,28 @@ void drawAt (juce::Graphics& g, const juce::Image& img, juce::Rectangle<float> d
     g.setOpacity (1.0f);
 }
 
-void contactShadow (juce::Graphics& g, juce::Rectangle<float> f, float softness, float offsetY, float strength)
+void roundShadow (juce::Graphics& g, juce::Point<float> c, float radius, float height, float strength)
 {
-    auto r = f.translated (0, offsetY).expanded (softness);
-    for (int i = 0; i < 5; ++i)
-    {
-        const float t = (float) i / 5.0f;
-        g.setColour (juce::Colours::black.withAlpha (strength * 0.2f));
-        const float inset = softness * t;
-        g.fillRoundedRectangle (r.reduced (inset), juce::jmax (2.0f, softness * 1.2f - inset * 0.5f));
-    }
+    // the light comes from the top-left (kLight), so the shadow falls down-right, further for taller objects
+    const float lx = -kLight.x / kLight.z, ly = -kLight.y / kLight.z;
+    auto disc = [&] (juce::Point<float> centre, float r0, float r1, float alpha) {
+        // opaque-ish up to r0, fading smoothly (eased) to nothing at r1
+        juce::ColourGradient grad (juce::Colours::black.withAlpha (alpha), centre, juce::Colours::transparentBlack,
+                                   centre.translated (r1, 0.0f), true);
+        const float inner = juce::jlimit (0.0f, 0.99f, r0 / r1);
+        grad.addColour (inner, juce::Colours::black.withAlpha (alpha));
+        for (int i = 1; i < 4; ++i)
+        {
+            const float t = (float) i / 4.0f;
+            grad.addColour (inner + (1.0f - inner) * t, juce::Colours::black.withAlpha (alpha * (1.0f - t) * (1.0f - t)));
+        }
+        g.setGradientFill (grad);
+        g.fillEllipse (juce::Rectangle<float> (r1 * 2.0f, r1 * 2.0f).withCentre (centre));
+    };
+    // soft cast shadow: offset along the light direction, penumbra growing with height
+    disc (c.translated (lx * height * 0.85f, ly * height * 0.85f), radius * 0.85f, radius + height * 1.15f, 0.42f * strength);
+    // contact shadow: tight and dark right at the base
+    disc (c.translated (lx * height * 0.12f, ly * height * 0.12f), radius * 0.97f, radius * 1.12f, 0.62f * strength);
 }
 
 } // namespace padlab::materials
