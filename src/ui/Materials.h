@@ -34,9 +34,10 @@ float scaleOf (juce::Graphics& g);
 /** Cache by key: images are generated once and reused. */
 const juce::Image& cached (const juce::String& key, const std::function<juce::Image()>& make);
 
-/** A rounded "pillow" (pad, key cap, badge): rounded-rect footprint, round-over bevel, slight dome. */
+/** A rounded "pillow" (pad, key cap, badge): rounded-rect footprint, round-over bevel, slight dome.
+    `wear` (0..1) polishes and darkens the patch where fingers land. */
 juce::Image pillow (int w, int h, float corner, float bevel, float dome, juce::Colour albedo, const Shading& s,
-                    uint32_t seed = 1);
+                    uint32_t seed = 1, float wear = 0.0f);
 
 /** A domed LED lens in a black bezel. */
 juce::Image led (int diameter, juce::Colour colour, bool on);
@@ -46,6 +47,15 @@ juce::Image screw (int diameter, float angle);
 
 /** A knurled black knob with a white indicator; lighting stays fixed while it turns. */
 juce::Image knob (int diameter, float angle);
+
+/** Cream data wheel (no dimple); phase turns the knurled edge. */
+juce::Image wheel (int diameter, float knurlPhase);
+
+/** Just the finger dimple at `angle`, rendered in wheel space; draw it at `origin` (device px) over wheel(). */
+juce::Image wheelDimple (int diameter, float angle, float knurlPhase, juce::Point<int>& origin);
+
+/** A soft oily smudge (white, alpha only) for glass reflections. */
+juce::Image smudge (int w, int h, uint32_t seed);
 
 /** Tileable powder-coat paint texture (opaque). */
 juce::Image paintTile (juce::Colour base, int size, float roughness = 1.0f, uint32_t seed = 7);

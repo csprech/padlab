@@ -147,24 +147,12 @@ HardwareLookAndFeel::HardwareLookAndFeel()
 
 void HardwareLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down)
 {
-    // small rubber key
     auto r = b.getLocalBounds().toFloat().reduced (3.0f, 3.0f);
-    const float sc = materials::scaleOf (g);
-    g.setColour (juce::Colours::black.withAlpha (0.25f));
-    g.fillRoundedRectangle (r.expanded (2.0f), 6.0f);
-    juce::DropShadow (juce::Colours::black.withAlpha (down ? 0.35f : 0.55f), down ? 3 : 6, { 0, down ? 1 : 3 })
-        .drawForRectangle (g, r.toNearestInt().reduced (2));
-    r = r.translated (0, down ? 1.5f : 0.0f);
-    const int w = (int) std::ceil (r.getWidth() * sc), h = (int) std::ceil (r.getHeight() * sc);
-    const auto key = "smallkey:" + juce::String (w) + "x" + juce::String (h);
-    const auto& img = materials::cached (key, [=] {
-        return materials::pillow (w, h, 5.0f * sc, juce::jmin (w, h) * 0.26f, 1.2f * sc, colours::keyLight, materials::plastic(), 3);
-    });
-    materials::drawAt (g, img, r);
+    drawFlatKey (g, r, colours::keyLight, down, 0.0f, 3);
     if (over && ! down)
     {
         g.setColour (juce::Colours::white.withAlpha (0.05f));
-        g.fillRoundedRectangle (r, 5.0f);
+        g.fillRoundedRectangle (r, 2.5f);
     }
 }
 
@@ -404,7 +392,7 @@ void LcdLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int w, int h, juc
 // ---------------------------------------------------------------- rubber key caps
 
 HardButton::HardButton (const juce::String& text, juce::Colour led, Cap c)
-    : juce::TextButton (text), ledColour (led), cap (c) {}
+    : juce::TextButton (text), ledColour (led), cap_ (c), seed ((int) (juce::DefaultHashFunctions::generateHash (text, 1 << 16))) {}
 
 void HardButton::setLit (bool l)
 {
@@ -415,73 +403,85 @@ void HardButton::setLit (bool l)
     }
 }
 
-void HardButton::paintButton (juce::Graphics& g, bool over, bool down)
+namespace
 {
-    auto r = getLocalBounds().toFloat().reduced (4.0f, 4.0f);
-    const float press = down ? 2.0f : 0.0f;
+    /** Low, flat-faced moulded key: a small round-over at the edge and an almost flat top. */
+    materials::Shading keyShading() { return { 0.42f, 0.64f, 0.10f, 12.0f, 0.03f, 0.08f, 1.4f }; }
+
+    void drawCutout (juce::Graphics& g, juce::Rectangle<float> cap)
+    {
+        // the slot in the panel: a thin dark gap with a lit lower lip
+        auto slot = cap.expanded (1.6f);
+        g.setColour (juce::Colours::white.withAlpha (0.32f));
+        g.drawRoundedRectangle (slot.translated (0, 1.0f), 3.5f, 1.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.62f));
+        g.fillRoundedRectangle (slot, 3.5f);
+    }
+} // namespace
+
+void drawFlatKey (juce::Graphics& g, juce::Rectangle<float> cap, juce::Colour albedo, bool down, float wear, uint32_t seed)
+{
+    drawCutout (g, cap);
+    if (! down)
+        juce::DropShadow (juce::Colours::black.withAlpha (0.35f), 3, { 1, 2 }).drawForRectangle (g, cap.toNearestInt().reduced (1));
+    cap = cap.translated (0, down ? 1.0f : 0.0f);
     const float sc = materials::scaleOf (g);
-
-    // the hole in the panel the key sits in: dark, with a lit lower lip
-    auto hole = r.expanded (2.5f);
-    g.setColour (juce::Colours::white.withAlpha (0.28f));
-    g.drawRoundedRectangle (hole.translated (0, 1.0f), 8.0f, 1.0f);
-    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.55f), 0, hole.getY(),
-                                             juce::Colours::black.withAlpha (0.30f), 0, hole.getBottom(), false));
-    g.fillRoundedRectangle (hole, 8.0f);
-
-    // soft shadow cast onto the panel, shorter when the key is pressed
-    juce::DropShadow (juce::Colours::black.withAlpha (down ? 0.4f : 0.6f), down ? 3 : 7, { 1, down ? 1 : 4 })
-        .drawForRectangle (g, r.toNearestInt().reduced (3));
-
-    r = r.translated (0, press);
-    const int w = (int) std::ceil (r.getWidth() * sc), h = (int) std::ceil (r.getHeight() * sc);
-    const juce::Colour albedo = cap == Cap::Dark ? colours::keyDark : cap == Cap::Red ? colours::keyRed : colours::keyLight;
-    const auto key = "key:" + juce::String (w) + "x" + juce::String (h) + ":" + albedo.toString();
+    const int w = (int) std::ceil (cap.getWidth() * sc), h = (int) std::ceil (cap.getHeight() * sc);
+    const auto key = "flatkey:" + juce::String (w) + "x" + juce::String (h) + ":" + albedo.toString() + ":"
+                     + juce::String ((int) (wear * 100)) + ":" + juce::String ((int) seed);
     const auto& img = materials::cached (key, [=] {
-        auto sh = materials::plastic();
-        if (cap != Cap::Light)
-        {
-            sh.specular = 0.22f; // darker rubber reads softer
-            sh.shininess = 18.0f;
-            sh.bump = 0.25f;
-        }
-        return materials::pillow (w, h, 7.0f * sc, juce::jmin (w, h) * 0.24f, 2.0f * sc, albedo, sh, 17);
+        return materials::pillow (w, h, 2.5f * sc, juce::jmin (w, h) * 0.12f, 0.4f * sc, albedo, keyShading(), seed, wear);
     });
-    materials::drawAt (g, img, r);
+    materials::drawAt (g, img, cap);
     if (down)
     {
-        g.setColour (juce::Colours::black.withAlpha (0.10f));
-        g.fillRoundedRectangle (r, 7.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.08f));
+        g.fillRoundedRectangle (cap, 2.5f);
     }
-    else if (over)
+}
+
+void HardButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    auto b = getLocalBounds().toFloat();
+    const auto lines = juce::StringArray::fromLines (getButtonText());
+    const float lineH = 11.0f;
+    const float legendH = getButtonText().isEmpty() ? 0.0f : lines.size() * lineH;
+    // every key in a row has the same cap, whatever its legend: size and place it for the row's legend height
+    const float slotH = (float) legendLines * lineH, gap = 4.0f;
+    const float capH = juce::jlimit (14.0f, 30.0f, b.getHeight() - slotH - gap - 4.0f);
+    const float capW = juce::jmin (b.getWidth() - 8.0f, capH * 2.0f);
+    const float capY = b.getY() + std::round ((b.getHeight() - (slotH + gap + capH)) * 0.5f) + slotH + gap;
+    const float top = capY - gap - legendH; // legend sits just above the cap
+
+    // legend silkscreened on the panel above the key, with the LED dot beside its first line
+    g.setFont (labelFont (10.5f));
+    for (int i = 0; i < lines.size(); ++i)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.04f));
-        g.fillRoundedRectangle (r, 7.0f);
+        const juce::Rectangle<float> row (b.getX(), top + i * lineH, b.getWidth(), lineH);
+        g.setColour (colours::silk.withMultipliedAlpha (isEnabled() ? 0.92f : 0.4f));
+        g.drawText (lines[i], row, juce::Justification::centred, false);
+        if (i == 0 && hasLed)
+        {
+            const bool on = lit && ! (blink && (juce::Time::getMillisecondCounter() / 250) % 2 == 0);
+            const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), lines[i]);
+            const float d = 5.0f;
+            drawLed (g, juce::Rectangle<float> (d, d).withCentre ({ row.getCentreX() - tw * 0.5f - 7.0f, row.getCentreY() - 0.5f }),
+                     ledColour, on ? 1.0f : 0.0f);
+        }
     }
 
-    // LED: centred above the legend on tall keys, top-left on small ones
-    auto textArea = r.toNearestInt().reduced (5, 3);
-    const bool tall = r.getHeight() >= 50.0f;
-    if (hasLed)
+    const juce::Rectangle<float> cap (std::round (b.getCentreX() - capW * 0.5f), capY, capW, capH);
+    const juce::Colour albedo = cap_ == Cap::Dark   ? colours::keyDark
+                              : cap_ == Cap::Red    ? colours::keyRed
+                              : cap_ == Cap::White  ? colours::keyWhite
+                              : cap_ == Cap::Blue   ? colours::keyBlue
+                                                    : colours::keyLight;
+    drawFlatKey (g, cap, albedo, down, wear, 17u + (uint32_t) seed);
+    if (over && ! down)
     {
-        const bool on = lit && ! (blink && (juce::Time::getMillisecondCounter() / 250) % 2 == 0);
-        const float d = juce::jlimit (4.5f, 6.5f, r.getHeight() * 0.12f);
-        auto ledR = tall ? juce::Rectangle<float> (d, d).withCentre ({ r.getCentreX(), r.getY() + 9.0f })
-                         : juce::Rectangle<float> (r.getX() + 8.0f, r.getY() + 7.0f, d, d);
-        drawLed (g, ledR, ledColour, on ? 1.0f : 0.0f);
-        if (tall)
-            textArea.removeFromTop (12);
+        g.setColour (juce::Colours::white.withAlpha (0.05f));
+        g.fillRoundedRectangle (cap, 2.5f);
     }
-
-    // pad-printed legend, very slightly embossed by the light
-    const bool lightText = cap != Cap::Light;
-    const auto ink = (lightText ? colours::silkLight : colours::silk).withMultipliedAlpha (isEnabled() ? 0.92f : 0.4f);
-    g.setFont (labelFont (juce::jlimit (10.0f, 14.0f, getHeight() * 0.27f)));
-    auto ta = textArea.withTrimmedTop (hasLed && ! tall ? 4 : 0);
-    g.setColour ((lightText ? juce::Colours::black : juce::Colours::white).withAlpha (0.22f));
-    g.drawFittedText (getButtonText(), ta.translated (0, 1), juce::Justification::centred, 2, 0.85f);
-    g.setColour (ink);
-    g.drawFittedText (getButtonText(), ta, juce::Justification::centred, 2, 0.85f);
 }
 
 // ---------------------------------------------------------------- LCD ink shadow
@@ -577,6 +577,20 @@ void LcdGlass::paint (juce::Graphics& g)
                                              juce::Colours::white.withAlpha (0.0f), r.getX() + r.getWidth() * 0.4f,
                                              r.getBottom(), false));
     g.fillPath (sheen);
+
+    // a couple of greasy fingerprint smears, only visible as a change in the glass's sheen
+    const float sc = materials::scaleOf (g);
+    struct Smear { float x, y, w, h, alpha; uint32_t seed; };
+    for (auto s : { Smear { 0.70f, 0.58f, 0.16f, 0.22f, 0.10f, 3 }, Smear { 0.06f, 0.30f, 0.10f, 0.20f, 0.07f, 9 },
+                    Smear { 0.44f, 0.84f, 0.12f, 0.12f, 0.06f, 21 } })
+    {
+        auto dest = juce::Rectangle<float> (r.getWidth() * s.w, r.getHeight() * s.h)
+                        .withCentre ({ r.getWidth() * s.x, r.getHeight() * s.y });
+        const int w = (int) std::ceil (dest.getWidth() * sc), h = (int) std::ceil (dest.getHeight() * sc);
+        materials::drawAt (g, materials::cached ("smudge:" + juce::String (w) + "x" + juce::String (h) + ":" + juce::String ((int) s.seed),
+                                                 [=] { return materials::smudge (w, h, s.seed); }),
+                           dest, s.alpha);
+    }
 }
 
 } // namespace padlab::theme

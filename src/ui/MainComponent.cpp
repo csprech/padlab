@@ -134,6 +134,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     {
         banks[(size_t) i] = std::make_unique<theme::HardButton> (juce::String::charToString ((juce::juce_wchar) ('A' + i)));
         banks[(size_t) i]->onClick = [this, i] { setBank (i); };
+        banks[(size_t) i]->setLegendLines (1);
         addAndMakeVisible (*banks[(size_t) i]);
     }
 
@@ -174,6 +175,18 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
         addAndMakeVisible (b);
 
+    // worn from use: the keys you hit all day are polished smooth
+    playBtn.setWear (0.7f);
+    stopBtn.setWear (0.8f);
+    recBtn.setWear (0.45f);
+    overdubBtn.setWear (0.35f);
+    mainBtn.setWear (0.4f);
+    banks[0]->setWear (0.35f);
+
+    dataWheel.onStep = [this] (int steps) { dataStep (steps); };
+    addAndMakeVisible (dataWheel);
+    addMouseListener (&touchTracker, true);
+
     addAndMakeVisible (playhead);
     addAndMakeVisible (glass); // LCD glass sits on top of the screen contents
 
@@ -210,6 +223,7 @@ void MainComponent::parentHierarchyChanged()
 MainComponent::~MainComponent()
 {
     stopTimer();
+    removeMouseListener (&touchTracker);
     ctx.removeChangeListener (this);
     engine.onQLinkMidi = nullptr;
     juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
@@ -224,18 +238,23 @@ void MainComponent::resized()
     rightPanel = r.removeFromRight (juce::jlimit (420, 560, (int) (r.getWidth() * 0.345f)));
     r.removeFromRight (26);
 
-    // ---- left: brand, LCD, mode keys, transport keys
+    // ---- left: brand + disk keys, LCD, then mode/transport keys beside the DATA wheel
     auto left = r;
     brandArea = left.removeFromTop (46);
     left.removeFromTop (6);
-    transportArea = left.removeFromBottom (78);
-    left.removeFromBottom (8);
-    modeArea = left.removeFromBottom (74);
+    auto bottom = left.removeFromBottom (160);
     left.removeFromBottom (10);
     screenArea = left;
     lcdArea = screenArea.reduced (18, 16);
     glass.setBounds (lcdArea);
     playhead.setBounds (lcdArea);
+
+    wheelArea = bottom.removeFromRight (juce::jmin (190, bottom.getHeight() + 24));
+    bottom.removeFromRight (14);
+    dataWheel.setBounds (wheelArea.withTrimmedTop (16));
+    modeArea = bottom.removeFromTop (74);
+    bottom.removeFromTop (8);
+    transportArea = bottom;
 
     auto inner = lcdArea.reduced (6);
     auto titleBar = inner.removeFromTop (22);
@@ -251,17 +270,23 @@ void MainComponent::resized()
 
     {
         auto m = modeArea.withTrimmedTop (16);
-        const int w = 96;
+        const int w = juce::jmin (96, (m.getWidth() - 4 * 6) / 5);
         for (auto* b : { &mainBtn, &progBtn, &sampleBtn, &samplerBtn, &mixerBtn })
         {
             b->setBounds (m.removeFromLeft (w));
             m.removeFromLeft (6);
         }
-        fileArea = m.removeFromRight (340);
-        auto files = fileArea.withTrimmedTop (4).withSizeKeepingCentre (340, 30);
+    }
+    {
+        // disk keys live in the brand strip, between the badge and the tagline
+        fileArea = brandArea.withTrimmedLeft (250).withTrimmedRight (180);
+        const int unit = juce::jmin (78, (int) ((fileArea.getWidth() - 18) / 4.35f));
+        const int total = unit * 3 + (int) (unit * 1.35f) + 18;
+        fileArea = fileArea.withSizeKeepingCentre (total, fileArea.getHeight());
+        auto files = fileArea.withTrimmedTop (16);
         for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
         {
-            b->setBounds (files.removeFromLeft (b == &settingsBtn ? 100 : 74));
+            b->setBounds (files.removeFromLeft (b == &settingsBtn ? (int) (unit * 1.35f) : unit));
             files.removeFromLeft (6);
         }
     }
@@ -507,7 +532,8 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
     sectionHeader (g, "Q-LINK  /  SELECTED PAD", qlinkArea);
     sectionHeader (g, "PAD PERFORMANCE", padModeArea);
     sectionHeader (g, "PAD BANK", bankArea);
-    sectionHeader (g, "MODE", modeArea.withWidth (5 * 96 + 4 * 6));
+    sectionHeader (g, "MODE", modeArea.withRight (mixerBtn.getRight()));
+    sectionHeader (g, "DATA", wheelArea);
     sectionHeader (g, "DISK", fileArea);
     sectionHeader (g, "TRANSPORT", transportArea);
 }
@@ -631,6 +657,11 @@ void MainComponent::timerCallback()
             m.area = m.area + offset;
     }
     playhead.update (std::move (live));
+
+    juce::Rectangle<int> cursor;
+    if (auto* t = dataTarget.getComponent(); t != nullptr && t->isShowing() && active->isParentOf (t))
+        cursor = playhead.getLocalArea (t, t->getLocalBounds());
+    playhead.setCursor (cursor);
 }
 
 // ---------------------------------------------------------------- transport helpers
@@ -718,6 +749,76 @@ void MainComponent::qlinkChanged (int knob)
         screens[(size_t) ScreenMode::Program]->contextChanged();
 }
 
+// ---------------------------------------------------------------- DATA wheel
+
+void MainComponent::noteTouched (juce::Component* c)
+{
+    for (; c != nullptr && c != this; c = c->getParentComponent())
+    {
+        if (c == &dataWheel)
+            return;
+        if (dynamic_cast<juce::Slider*> (c) != nullptr || dynamic_cast<juce::ComboBox*> (c) != nullptr)
+        {
+            dataTarget = c;
+            return;
+        }
+    }
+}
+
+void MainComponent::dataStep (int steps)
+{
+    auto* target = dataTarget.getComponent();
+    if (target == nullptr || ! target->isShowing())
+    {
+        flash ("Click a value, then turn DATA");
+        return;
+    }
+
+    if (auto* s = dynamic_cast<juce::Slider*> (target))
+    {
+        const auto range = s->getRange();
+        const double interval = s->getInterval();
+        double v = s->getValue();
+        if (interval > 0.0 && juce::approximatelyEqual (s->getSkewFactor(), 1.0))
+        {
+            // about 300 detents end to end, rounded to a tidy multiple of the slider's step
+            const double raw = juce::jmax (1.0, std::ceil (range.getLength() / interval / 300.0));
+            double mult = 1.0;
+            for (double nice : { 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0 })
+                if ((mult = nice) >= raw)
+                    break;
+            v = std::round (v / (interval * mult)) * interval * mult + steps * interval * mult;
+        }
+        else
+        {
+            // continuous or skewed: move through the knob's travel instead
+            v = s->proportionOfLengthToValue (juce::jlimit (0.0, 1.0, s->valueToProportionOfLength (v) + steps / 200.0));
+        }
+        s->setValue (range.clipValue (v), juce::sendNotificationSync);
+        flash (s->getTextFromValue (s->getValue()));
+    }
+    else if (auto* cb = dynamic_cast<juce::ComboBox*> (target))
+    {
+        const int n = cb->getNumItems();
+        int idx = cb->getSelectedItemIndex();
+        const int dir = steps > 0 ? 1 : -1;
+        for (int remaining = std::abs (steps); remaining > 0; --remaining)
+        {
+            int next = idx + dir;
+            while (next >= 0 && next < n && ! cb->isItemEnabled (cb->getItemId (next)))
+                next += dir;
+            if (next < 0 || next >= n)
+                break;
+            idx = next;
+        }
+        if (idx != cb->getSelectedItemIndex() && idx >= 0)
+        {
+            cb->setSelectedItemIndex (idx, juce::sendNotificationSync);
+            flash (cb->getItemText (idx));
+        }
+    }
+}
+
 // ---------------------------------------------------------------- keyboard
 
 bool MainComponent::keyPressed (const juce::KeyPress& k)
@@ -746,6 +847,12 @@ bool MainComponent::keyPressed (const juce::KeyPress& k)
         return true;
     }
     if (k == juce::KeyPress::returnKey) { engine.play (true); return true; }
+    if (k.getKeyCode() == juce::KeyPress::upKey || k.getKeyCode() == juce::KeyPress::downKey)
+    {
+        const int dir = k.getKeyCode() == juce::KeyPress::upKey ? 1 : -1;
+        dataWheel.nudge (dir * (mods.isShiftDown() ? 10 : 1));
+        return true;
+    }
     if (k == juce::KeyPress::F1Key) { showScreen (ScreenMode::Main); return true; }
     if (k == juce::KeyPress::F2Key) { showScreen (ScreenMode::Program); return true; }
     if (k == juce::KeyPress::F3Key) { showScreen (ScreenMode::SampleEdit); return true; }

@@ -123,28 +123,36 @@ const juce::Image& cached (const juce::String& key, const std::function<juce::Im
 }
 
 juce::Image pillow (int w, int h, float corner, float bevel, float dome, juce::Colour albedoColour, const Shading& s,
-                    uint32_t seed)
+                    uint32_t seed, float wear)
 {
     const float hw = w * 0.5f, hh = h * 0.5f;
     const Rgb base = toRgb (albedoColour);
+    // where fingers land: an uneven patch a little below the centre, polished smooth and slightly oily
+    auto wearMask = [=] (float x, float y) {
+        if (wear <= 0.0f)
+            return 0.0f;
+        const float nx = (x - hw) / hw, ny = (y - hh * 1.08f) / hh;
+        const float fall = juce::jlimit (0.0f, 1.0f, 1.0f - (nx * nx * 1.3f + ny * ny * 1.6f));
+        const float blot = valueNoise (x / (w * 0.16f), y / (h * 0.16f), seed + 41);
+        return wear * fall * fall * (0.45f + 0.55f * blot);
+    };
     auto heightFn = [=] (float x, float y) {
         const float px = x - hw, py = y - hh;
         const float d = -sdRoundRect (px, py, hw - 0.5f, hh - 0.5f, corner);
         const float edge = roundOver (d / bevel);
         const float nx = px / hw, ny = py / hh;
         const float domeH = dome * (1.0f - 0.5f * (nx * nx + ny * ny)) * edge;
-        const float grain = s.bump * (valueNoise (x * s.bumpScale, y * s.bumpScale, seed) - 0.5f) * edge;
+        const float grain = s.bump * (1.0f - 0.8f * wearMask (x, y)) * (valueNoise (x * s.bumpScale, y * s.bumpScale, seed) - 0.5f) * edge;
         return bevel * edge + domeH + grain;
     };
     auto coverage = [=] (float x, float y) { return juce::jlimit (0.0f, 1.0f, -sdRoundRect (x - hw, y - hh, hw - 0.5f, hh - 0.5f, corner) + 0.5f); };
     auto albedo = [=] (float x, float y) {
         const float g = 1.0f + s.grain * (hash ((int) x, (int) y, seed + 11) - 0.5f) * 2.0f;
-        // a faint "worn" sheen in the middle where fingers land
-        const float nx = (x - hw) / hw, ny = (y - hh) / hh;
-        const float wear = 1.0f + 0.05f * std::max (0.0f, 1.0f - (nx * nx + ny * ny) * 1.6f);
-        return Rgb { base.r * g * wear, base.g * g * wear, base.b * g * wear };
+        const float k = g * (1.0f - 0.07f * wearMask (x, y)); // skin oil darkens the surface a touch
+        return Rgb { base.r * k, base.g * k, base.b * k };
     };
-    return renderField (w, h, heightFn, coverage, albedo, s);
+    auto specMask = [=] (float x, float y) { return 1.0f + 3.5f * wearMask (x, y); };
+    return renderField (w, h, heightFn, coverage, albedo, s, specMask);
 }
 
 juce::Image led (int d, juce::Colour c, bool on)
@@ -265,6 +273,97 @@ juce::Image paintTile (juce::Colour baseColour, int size, float roughness, uint3
     };
     Shading s = { 0.72f, 0.36f, 0.06f, 12.0f, 0.0f, 0.0f, 1.0f };
     auto img = renderField (size, size, heightFn, [] (float, float) { return 1.0f; }, albedo, s);
+    return img;
+}
+
+namespace
+{
+    constexpr int kWheelTeeth = 90;
+    const juce::Colour kWheelColour { 0xffe2ddcd };
+
+    Shading wheelShading() { return { 0.44f, 0.62f, 0.16f, 14.0f, 0.03f, 0.0f, 1.0f }; }
+
+    /** Data wheel surface: knurled side skirt, a shallow dished top and (optionally) a finger dimple. */
+    float wheelHeight (float x, float y, float R, float phase, float dcx, float dcy, float rd)
+    {
+        const float px = x - R, py = y - R;
+        const float r = std::hypot (px, py);
+        const float Rt = R * 0.84f, Hs = R * 0.30f;
+        float h;
+        if (r > Rt)
+        {
+            const float t = juce::jlimit (0.0f, 1.0f, (R - r) / (R - Rt));
+            const float theta = std::atan2 (px, -py);
+            h = Hs * roundOver (t * 1.3f) + R * 0.005f * std::cos (kWheelTeeth * (theta - phase)) * juce::jlimit (0.0f, 1.0f, t * 3.0f);
+        }
+        else
+        {
+            const float lip = roundOver ((Rt - r) / (R * 0.07f));
+            const float q = r / Rt;
+            h = Hs + R * 0.025f * lip - R * 0.05f * (1.0f - q * q);
+        }
+        if (rd > 0.0f)
+        {
+            const float q = ((x - dcx) * (x - dcx) + (y - dcy) * (y - dcy)) / (rd * rd);
+            if (q < 1.0f)
+                h -= rd * 0.42f * (1.0f - q) * std::sqrt (1.0f - q);
+        }
+        return h;
+    }
+
+    float wheelAlbedoGrain (float x, float y) { return 1.0f + 0.03f * (hash ((int) x, (int) y, 77) - 0.5f); }
+} // namespace
+
+juce::Image wheel (int d, float phase)
+{
+    const float R = d * 0.5f;
+    const Rgb col = toRgb (kWheelColour);
+    return renderField (
+        d, d, [=] (float x, float y) { return wheelHeight (x, y, R, phase, 0, 0, 0); },
+        [=] (float x, float y) { return juce::jlimit (0.0f, 1.0f, R - std::hypot (x - R, y - R) + 0.5f); },
+        [=] (float x, float y) {
+            const float g = wheelAlbedoGrain (x, y);
+            return Rgb { col.r * g, col.g * g, col.b * g };
+        },
+        wheelShading());
+}
+
+juce::Image wheelDimple (int d, float angle, float phase, juce::Point<int>& origin)
+{
+    const float R = d * 0.5f, rd = R * 0.22f, dist = R * 0.52f;
+    const float dcx = R + std::sin (angle) * dist, dcy = R - std::cos (angle) * dist;
+    const int ox = (int) std::floor (dcx - rd - 2.0f), oy = (int) std::floor (dcy - rd - 2.0f);
+    const int size = (int) std::ceil (rd * 2.0f + 4.0f);
+    origin = { ox, oy };
+    const Rgb col = toRgb (kWheelColour);
+    // rendered in wheel space so it blends seamlessly into the base image underneath
+    return renderField (
+        size, size, [=] (float x, float y) { return wheelHeight (x + ox, y + oy, R, phase, dcx, dcy, rd); },
+        [=] (float x, float y) { return juce::jlimit (0.0f, 1.0f, rd + 1.0f - std::hypot (x + ox - dcx, y + oy - dcy)); },
+        [=] (float x, float y) {
+            const float g = wheelAlbedoGrain (x + ox, y + oy);
+            return Rgb { col.r * g, col.g * g, col.b * g };
+        },
+        wheelShading());
+}
+
+juce::Image smudge (int w, int h, uint32_t seed)
+{
+    juce::Image img (juce::Image::ARGB, std::max (1, w), std::max (1, h), true);
+    juce::Image::BitmapData bd (img, juce::Image::BitmapData::writeOnly);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+        {
+            const float nx = (x + 0.5f) / w * 2.0f - 1.0f, ny = (y + 0.5f) / h * 2.0f - 1.0f;
+            const float fall = juce::jlimit (0.0f, 1.0f, 1.0f - (nx * nx + ny * ny));
+            if (fall <= 0.0f)
+                continue;
+            // smeared oil: stretched low-frequency blots, with faint parallel swipe marks
+            const float blot = valueNoise (x / (w * 0.18f), y / (h * 0.30f), seed);
+            const float swipe = 0.5f + 0.5f * std::sin ((x * 0.8f + y * 0.35f) / (w * 0.02f) + 6.0f * valueNoise (x / (w * 0.3f), y / (h * 0.3f), seed + 5));
+            const float a = fall * fall * juce::jlimit (0.0f, 1.0f, blot * 1.6f - 0.45f) * (0.7f + 0.3f * swipe);
+            put (bd, x, y, { 1.0f, 1.0f, 1.0f }, a);
+        }
     return img;
 }
 

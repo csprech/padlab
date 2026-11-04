@@ -14,7 +14,7 @@ juce::Rectangle<float> PadGrid::padBounds (int i) const
     const float ox = area.getX() + (area.getWidth() - (size * 4 + kGap * 3)) * 0.5f;
     const float oy = area.getY() + (area.getHeight() - ((size + kLabelH) * 4 + kGap * 3)) * 0.5f;
     const int col = i % 4, row = 3 - i / 4; // pad 1 bottom-left
-    return { ox + col * (size + kGap), oy + row * (size + kLabelH + kGap), size, size };
+    return { ox + col * (size + kGap), oy + kLabelH + row * (size + kLabelH + kGap), size, size }; // label printed above
 }
 
 int PadGrid::padAt (juce::Point<int> p) const
@@ -80,7 +80,7 @@ void PadGrid::release (int i)
 void PadGrid::flashPad (int i, int velocity)
 {
     glow[(size_t) i] = juce::jmax (glow[(size_t) i], velocity / 127.0f);
-    repaint (padBounds (i).withHeight (padBounds (i).getHeight() + kLabelH + 2.0f).expanded (8.0f).toNearestInt());
+    repaint (padBounds (i).withTop (padBounds (i).getY() - kLabelH).expanded (8.0f).toNearestInt());
 }
 
 void PadGrid::mouseDown (const juce::MouseEvent& e)
@@ -157,7 +157,7 @@ void PadGrid::timerCallback()
             if (padDirty[(size_t) i] || lastPainted[(size_t) i] != bank * kPadsPerBank + i)
             {
                 // pad + its label strip only
-                repaint (padBounds (i).withHeight (padBounds (i).getHeight() + kLabelH + 2.0f).expanded (8.0f).toNearestInt());
+                repaint (padBounds (i).withTop (padBounds (i).getY() - kLabelH).expanded (8.0f).toNearestInt());
                 lastPainted[(size_t) i] = bank * kPadsPerBank + i;
             }
 }
@@ -175,37 +175,45 @@ void PadGrid::paint (juce::Graphics& g)
     for (int i = 0; i < kPadsPerBank; ++i)
     {
         const auto r = padBounds (i);
-        if (! clip.intersects (r.withHeight (r.getHeight() + kLabelH + 2.0f).expanded (10.0f)))
+        if (! clip.intersects (r.withTop (r.getY() - kLabelH).expanded (10.0f)))
             continue;
         const int pad = bank * kPadsPerBank + i;
         const float hit = glow[(size_t) i];
 
-        // the well in the deck: darker at the top (it faces away from the light), lit lip at the bottom
-        auto well = r.expanded (5.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.22f));
-        g.drawRoundedRectangle (well.translated (0, 1.2f), 10.0f, 1.2f);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2a28), 0, well.getY(), juce::Colour (0xff4a4844), 0,
-                                                 well.getBottom(), false));
-        g.fillRoundedRectangle (well, 10.0f);
+        // pads stand a little proud of the plate through square cut-outs: a thin dark gap around each
+        auto gap = r.expanded (2.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.28f));
+        g.drawRoundedRectangle (gap.translated (0, 1.0f), 5.0f, 1.0f);
+        g.setColour (juce::Colour (0xff1d1f21));
+        g.fillRoundedRectangle (gap, 5.0f);
 
-        // the rubber pad sinks when struck
+        // the rubber gives a little when struck
         const float press = juce::jmin (1.0f, hit * 1.25f);
-        auto p = r.reduced (0.5f + press * 1.0f).translated (0, press * 1.6f);
-        juce::DropShadow (juce::Colours::black.withAlpha (0.75f - press * 0.25f), (int) (7.0f - press * 4.0f),
-                          { 0, (int) std::round (3.0f - press * 2.0f) })
-            .drawForRectangle (g, p.toNearestInt().reduced (2));
+        auto p = r.translated (0, press * 1.0f);
+        if (press < 0.5f)
+            juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 4, { 1, 2 }).drawForRectangle (g, p.toNearestInt().reduced (2));
 
         const float sc = materials::scaleOf (g);
         const int px = (int) std::ceil (r.getWidth() * sc);
-        const auto& padImg = materials::cached ("pad:" + juce::String (px), [=] {
-            return materials::pillow (px, px, px * 0.085f, px * 0.17f, px * 0.035f, colours::rubber, materials::rubber(), 23);
+        // the bottom row (kick, snare, hats) gets played the most, so it's the most worn
+        static constexpr float kWear[kPadsPerBank] = { 0.95f, 0.85f, 0.7f, 0.45f, 0.4f, 0.35f, 0.25f, 0.2f,
+                                                       0.2f,  0.15f, 0.12f, 0.1f, 0.12f, 0.1f, 0.08f, 0.15f };
+        const auto& padImg = materials::cached ("pad:" + juce::String (px) + ":" + juce::String (i), [=] {
+            auto sh = materials::rubber();
+            sh.bump = 0.12f;
+            sh.bumpScale = 0.5f;
+            sh.grain = 0.025f;
+            sh.specular = 0.06f;
+            sh.ambient = 0.40f;
+            sh.diffuse = 0.66f;
+            return materials::pillow (px, px, px * 0.035f, px * 0.045f, px * 0.006f, colours::rubber, sh, 23u + (uint32_t) i, kWear[i]);
         });
         materials::drawAt (g, padImg, p);
         if (press > 0.0f)
         {
             // compressed rubber catches less light
-            g.setColour (juce::Colours::black.withAlpha (0.16f * press));
-            g.fillRoundedRectangle (p, px / sc * 0.085f);
+            g.setColour (juce::Colours::black.withAlpha (0.14f * press));
+            g.fillRoundedRectangle (p, px / sc * 0.035f);
         }
 
         if (dragHover == i)
@@ -215,7 +223,7 @@ void PadGrid::paint (juce::Graphics& g)
         }
 
         // printed label + status LED under the pad
-        auto label = juce::Rectangle<float> (r.getX(), r.getBottom() + 5.0f, r.getWidth(), kLabelH - 4.0f);
+        auto label = juce::Rectangle<float> (r.getX(), r.getY() - kLabelH + 1.0f, r.getWidth(), kLabelH - 5.0f);
         juce::String top = AppContext::padName (pad), sub = names[(size_t) i].toUpperCase();
         juce::Colour ledColour = colours::ledRed;
         float led = juce::jmax (hit, pad == selected ? 0.45f : 0.0f);

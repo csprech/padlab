@@ -7,10 +7,11 @@ C++20 / JUCE 8, macOS (Apple Silicon tested). The core is platform-neutral.
 ## Look
 
 The look is modelled on a classic 90s hardware sampler, with no third-party logos or panel artwork:
-- Warm grey speckled chassis, a darker pad deck, screws and silkscreened section labels (DIN Condensed).
-- Dark grey rubber pads that sink when struck, with printed labels and status LEDs.
-- Rubber key caps with red/green LEDs and knurled Q-Link knobs.
-- A backlit green dot-matrix LCD with pixel grid, vignette and glass sheen. Everything on the screen is drawn in one ink colour using VT323 (SIL Open Font License, `assets/fonts/VT323-OFL.txt`).
+- Warm grey powder-coated chassis, screws and silkscreened section labels (DIN Condensed).
+- Flat, matte grey rubber pads set into a blue-grey plate, with their labels and status LEDs printed above them. They give slightly when struck. The most-played pads (bottom row) and keys (PLAY, STOP, REC) are polished from wear.
+- Low, flat moulded keys (red REC/OVERDUB, white transport, blue-grey mode keys). Legends and LED dots are printed on the panel above each key.
+- A cream **DATA wheel** with a finger dimple, in a black collar. Knurled Q-Link knobs.
+- A backlit green dot-matrix LCD with pixel grid, vignette, glass sheen and a few faint fingerprint smears. Everything on the screen is drawn in one ink colour using VT323 (SIL Open Font License, `assets/fonts/VT323-OFL.txt`).
 
 Pads, key caps, knobs, LEDs, screws and paint grain are rendered by `src/ui/Materials.cpp`. It's a small per-pixel shader that describes each part as a height field and lights it with one top-left key light (Lambert diffuse plus Blinn-Phong specular, micro-bump grain). Results are cached at device-pixel resolution.
 
@@ -46,6 +47,7 @@ open build/Padlab_artefacts/Release/Padlab.app
 | **Sample Edit** | Chop by **Threshold** (spectral-flux transients), **Regions**, **BPM** or **Manual**. Click a slice to hear it. Normalize, reverse, trim, or set a pad to play a single slice. **Convert slices to pads** can also write a sequence that replays the loop and set the tempo from the loop length. |
 | **Sampler** | Record from the audio input or **resample** the master output. Threshold-triggered start, input meters, then keep the recording on a pad (or keep and go straight to chopping). |
 | **Mixer** | Track strips (each track's program level/pan, mute, solo, meters), a pad mixer for the current bank, and a master fader. |
+| **DATA wheel** | Click any value on the screen (or a Q-Link) and turn the wheel to step it: drag around the wheel, scroll over it, or use `Up`/`Down` (`Shift` = ×10). Brackets on the LCD mark the field it edits. Lists step item by item; numbers step in tidy increments (e.g. 1 BPM). |
 | **Q-Links** | 4 knobs for the selected pad: tune, cutoff, resonance and decay. MIDI CC 70–73 controls them too. |
 
 ### Keyboard
@@ -56,6 +58,7 @@ open build/Padlab_artefacts/Release/Padlab.app
 | `Space` / `Return` | Play–Stop / Play from start |
 | `.` / `,` | Overdub / Rec arm (press again to punch out) |
 | `[` `]` | Bank down / up |
+| `Up` / `Down` | Turn the DATA wheel one detent (Shift = 10) |
 | `N` / `L` | Note Repeat / Full Level |
 | `F1`–`F5` | Main, Program Edit, Sample Edit, Sampler, Mixer |
 | `Cmd-Z` / `Cmd-S` / `Cmd-Shift-S` / `Cmd-O` / `Cmd-N` | Undo / Save / Save As / Open / New |

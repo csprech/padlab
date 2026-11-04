@@ -48,6 +48,7 @@ target_sources(Padlab PRIVATE
   src/engine/Engine.cpp
   src/ui/Theme.cpp
   src/ui/Materials.cpp
+  src/ui/DataWheel.cpp
   src/ui/PadGrid.cpp
   src/ui/Screens.cpp
   src/ui/MainScreen.cpp

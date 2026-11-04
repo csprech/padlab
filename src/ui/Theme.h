@@ -16,15 +16,17 @@ namespace colours
 {
     const juce::Colour chassis     { 0xffaaa79f };
     const juce::Colour chassisLow  { 0xff99968e };
-    const juce::Colour deck        { 0xff8c8981 };
+    const juce::Colour deck        { 0xff8b9399 }; // blue-grey pad plate
     const juce::Colour seam        { 0xff6b6862 };
     const juce::Colour bezel       { 0xff2a2a28 };
     const juce::Colour silk        { 0xff272624 }; // printed text on the light chassis
     const juce::Colour silkLight   { 0xfff2f0ea }; // printed text on dark parts
-    const juce::Colour rubber      { 0xff4c4b48 }; // pads
-    const juce::Colour keyLight    { 0xffd2cec4 };
+    const juce::Colour rubber      { 0xff7b7b78 }; // pads
+    const juce::Colour keyLight    { 0xffd8d4c8 };
+    const juce::Colour keyWhite    { 0xffeceae2 };
+    const juce::Colour keyBlue     { 0xff8b9ea9 };
     const juce::Colour keyDark     { 0xff5f5d59 };
-    const juce::Colour keyRed      { 0xffa8453b };
+    const juce::Colour keyRed      { 0xffc8443a };
     const juce::Colour ledRed      { 0xffff3a2c };
     const juce::Colour ledGreen    { 0xff63ff5a };
     const juce::Colour ledAmber    { 0xffffb11f };
@@ -117,23 +119,33 @@ public:
     int getPopupMenuBorderSize() override { return 2; }
 };
 
-/** A rubber key cap with an optional LED. */
+/** A low, flat moulded key; draws its own cut-out in the panel. */
+void drawFlatKey (juce::Graphics&, juce::Rectangle<float> cap, juce::Colour albedo, bool down, float wear, uint32_t seed);
+
+/** A flat key cap with its legend (and optional LED) printed on the panel above it. */
 class HardButton : public juce::TextButton
 {
 public:
-    enum class Cap { Light, Dark, Red };
+    enum class Cap { Light, Dark, Red, White, Blue };
 
     explicit HardButton (const juce::String& text, juce::Colour led = colours::ledRed, Cap cap = Cap::Light);
     void setLit (bool lit);
     bool isLit() const { return lit; }
     void setBlink (bool b) { if (b != blink) { blink = b; repaint(); } }
     void setHasLed (bool b) { hasLed = b; repaint(); }
-    void setCap (Cap c) { cap = c; repaint(); }
+    void setCap (Cap c) { cap_ = c; repaint(); }
+    /** 0..1: how polished the cap is from use. */
+    void setWear (float w) { wear = w; repaint(); }
+    /** Lines reserved for the legend above the cap (keeps caps aligned along a row). */
+    void setLegendLines (int n) { legendLines = n; repaint(); }
     void paintButton (juce::Graphics&, bool over, bool down) override;
 
 private:
     juce::Colour ledColour;
-    Cap cap;
+    Cap cap_;
+    int seed = 0;
+    float wear = 0.0f;
+    int legendLines = 2;
     bool lit = false, blink = false, hasLed = true;
 };
 
