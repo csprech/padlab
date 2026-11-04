@@ -195,9 +195,64 @@ void HardwareLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
     struct LastRender { float angle = -100.0f; int size = 0; juce::Image image; };
     static std::map<const juce::Slider*, LastRender> renders;
     auto& last = renders[&s];
+    const auto capProp = s.getProperties()["capColour"];
+    const juce::Colour cap = capProp.isVoid() ? juce::Colour (0xff1a1a1a) : juce::Colour ((juce::uint32) (juce::int64) capProp);
     if (std::abs (last.angle - angle) > 0.002f || last.size != d)
-        last = { angle, d, materials::knob (d, angle) };
+        last = { angle, d, materials::knob (d, angle, cap) };
     materials::drawAt (g, last.image, kb);
+}
+
+void HardwareLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float min, float max,
+                                            juce::Slider::SliderStyle style, juce::Slider& s)
+{
+    if (style != juce::Slider::LinearVertical)
+        return juce::LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, pos, min, max, style, s);
+
+    // a panel fader: a slot cut into the panel, printed scale, and a black ribbed cap
+    auto r = juce::Rectangle<int> (x, y, w, h).toFloat();
+    const float capH = juce::jmin (30.0f, r.getHeight() * 0.16f);
+    auto travel = r.reduced (0.0f, capH * 0.5f);
+    const float cx = r.getCentreX();
+
+    g.setColour (colours::silk.withAlpha (0.7f));
+    for (int i = 0; i <= 10; ++i)
+    {
+        const float ty = travel.getY() + travel.getHeight() * (float) i / 10.0f;
+        const float len = i % 5 == 0 ? 10.0f : 6.0f;
+        g.drawLine (cx - 12.0f - len, ty, cx - 12.0f, ty, i % 5 == 0 ? 1.4f : 1.0f);
+        g.drawLine (cx + 12.0f, ty, cx + 12.0f + len, ty, i % 5 == 0 ? 1.4f : 1.0f);
+    }
+
+    auto slot = juce::Rectangle<float> (cx - 3.0f, travel.getY() - 4.0f, 6.0f, travel.getHeight() + 8.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.35f));
+    g.fillRoundedRectangle (slot.translated (0.0f, 1.2f).expanded (0.8f), 3.0f);
+    g.setColour (juce::Colour (0xff141414));
+    g.fillRoundedRectangle (slot, 3.0f);
+
+    const float capW = juce::jmin (r.getWidth() - 6.0f, 40.0f);
+    auto cap = juce::Rectangle<float> (capW, capH).withCentre ({ cx, pos });
+    juce::DropShadow (juce::Colours::black.withAlpha (0.55f), 6, { 1, 4 }).drawForRectangle (g, cap.toNearestInt().reduced (2));
+    const float sc = materials::scaleOf (g);
+    const int cw = (int) std::ceil (cap.getWidth() * sc), ch = (int) std::ceil (cap.getHeight() * sc);
+    const auto& img = materials::cached ("fadercap:" + juce::String (cw) + "x" + juce::String (ch), [=] {
+        auto sh = materials::plastic();
+        sh.specular = 0.35f;
+        return materials::pillow (cw, ch, 2.5f * sc, juce::jmin (cw, ch) * 0.22f, 1.0f * sc, juce::Colour (0xff1e1e1e), sh, 41);
+    });
+    materials::drawAt (g, img, cap);
+    // ribs and the white centre line
+    for (int i = -2; i <= 2; ++i)
+    {
+        if (i == 0)
+            continue;
+        const float ly = cap.getCentreY() + i * cap.getHeight() * 0.16f;
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawLine (cap.getX() + 4.0f, ly, cap.getRight() - 4.0f, ly, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.10f));
+        g.drawLine (cap.getX() + 4.0f, ly + 1.0f, cap.getRight() - 4.0f, ly + 1.0f, 1.0f);
+    }
+    g.setColour (juce::Colour (0xffeeeae0));
+    g.fillRect (juce::Rectangle<float> (cap.getX() + 3.0f, cap.getCentreY() - 1.0f, cap.getWidth() - 6.0f, 2.0f));
 }
 
 // ---------------------------------------------------------------- LCD look and feel
@@ -445,17 +500,19 @@ void HardButton::paintButton (juce::Graphics& g, bool over, bool down)
     auto b = getLocalBounds().toFloat();
     const auto lines = juce::StringArray::fromLines (getButtonText());
     const float lineH = 11.0f;
-    const float legendH = getButtonText().isEmpty() ? 0.0f : lines.size() * lineH;
+    const bool above = ! legendOnCap && getButtonText().isNotEmpty();
+    const float legendH = above ? lines.size() * lineH : 0.0f;
     // every key in a row has the same cap, whatever its legend: size and place it for the row's legend height
-    const float slotH = (float) legendLines * lineH, gap = 4.0f;
-    const float capH = juce::jlimit (14.0f, 30.0f, b.getHeight() - slotH - gap - 4.0f);
-    const float capW = juce::jmin (b.getWidth() - 8.0f, capH * 2.0f);
-    const float capY = b.getY() + std::round ((b.getHeight() - (slotH + gap + capH)) * 0.5f) + slotH + gap;
+    const float slotH = legendOnCap ? 0.0f : (float) legendLines * lineH, gap = slotH > 0.0f ? 4.0f : 0.0f;
+    const float subH = subLabel.isEmpty() ? 0.0f : 13.0f;
+    const float capH = juce::jlimit (14.0f, 30.0f, b.getHeight() - slotH - gap - subH - 4.0f);
+    const float capW = juce::jmin (b.getWidth() - 8.0f, capH * capAspect);
+    const float capY = b.getY() + std::round ((b.getHeight() - (slotH + gap + capH + subH)) * 0.5f) + slotH + gap;
     const float top = capY - gap - legendH; // legend sits just above the cap
 
     // legend silkscreened on the panel above the key, with the LED dot beside its first line
     g.setFont (labelFont (10.5f));
-    for (int i = 0; i < lines.size(); ++i)
+    for (int i = 0; above && i < lines.size(); ++i)
     {
         const juce::Rectangle<float> row (b.getX(), top + i * lineH, b.getWidth(), lineH);
         g.setColour (colours::silk.withMultipliedAlpha (isEnabled() ? 0.92f : 0.4f));
@@ -481,6 +538,30 @@ void HardButton::paintButton (juce::Graphics& g, bool over, bool down)
     {
         g.setColour (juce::Colours::white.withAlpha (0.05f));
         g.fillRoundedRectangle (cap, 2.5f);
+    }
+    if (legendOnCap)
+    {
+        const bool darkCap = cap_ == Cap::Dark || cap_ == Cap::Red;
+        g.setFont (labelFont (juce::jlimit (10.0f, 14.0f, capH * 0.55f)));
+        g.setColour ((darkCap ? colours::silkLight : colours::silk).withMultipliedAlpha (isEnabled() ? 0.9f : 0.4f));
+        g.drawFittedText (getButtonText(), cap.toNearestInt().translated (0, down ? 1 : 0), juce::Justification::centred, 2, 0.85f);
+        if (hasLed)
+        {
+            const bool on = lit && ! (blink && (juce::Time::getMillisecondCounter() / 250) % 2 == 0);
+            drawLed (g, { cap.getX() + 5.0f, cap.getY() + 4.0f, 4.5f, 4.5f }, ledColour, on ? 1.0f : 0.0f);
+        }
+    }
+    if (subLabel.isNotEmpty())
+    {
+        // the shifted function, printed in a small dark box under the key
+        g.setFont (labelFont (8.5f));
+        const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), subLabel) + 8.0f;
+        auto box = juce::Rectangle<float> (juce::jmin (b.getWidth() - 2.0f, juce::jmax (capW, tw)), 10.0f)
+                       .withCentre ({ b.getCentreX(), cap.getBottom() + 3.0f + 5.0f });
+        g.setColour (colours::keyDark.withAlpha (0.85f));
+        g.fillRect (box);
+        g.setColour (colours::silkLight.withAlpha (0.92f));
+        g.drawFittedText (subLabel, box.toNearestInt(), juce::Justification::centred, 1, 0.8f);
     }
 }
 

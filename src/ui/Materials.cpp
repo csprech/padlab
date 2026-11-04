@@ -207,7 +207,7 @@ juce::Image screw (int d, float angle)
     return renderField (d, d, heightFn, coverage, albedo, metal());
 }
 
-juce::Image knob (int d, float angle)
+juce::Image knob (int d, float angle, juce::Colour capColour)
 {
     const float R = d * 0.5f;
     const int teeth = 30;
@@ -244,10 +244,15 @@ juce::Image knob (int d, float angle)
         const float v = px * std::sin (-angle) + py * std::cos (-angle);
         return std::abs (u) < R * 0.055f && v < -capR * 0.28f && v > -capR * 0.92f;
     };
+    const Rgb capRgb = toRgb (capColour);
     auto albedo = [=] (float x, float y) {
         if (onIndicator (x, y))
             return Rgb { 0.93f, 0.92f, 0.88f };
-        const float g = 0.10f + 0.015f * (hash ((int) x, (int) y, 9) - 0.5f);
+        const float n = 1.0f + 0.15f * (hash ((int) x, (int) y, 9) - 0.5f);
+        const float r = std::hypot (x - R, y - R);
+        if (r < capR) // coloured top cap; the knurled skirt stays black
+            return Rgb { capRgb.r * n, capRgb.g * n, capRgb.b * n };
+        const float g = 0.10f * n;
         return Rgb { g, g, g * 1.02f };
     };
     Shading s = plastic();

@@ -87,6 +87,8 @@ public:
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool over, bool down) override;
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end,
                            juce::Slider&) override;
+    void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float min, float max,
+                           juce::Slider::SliderStyle, juce::Slider&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getLabelFont (juce::Label&) override;
 };
@@ -138,6 +140,12 @@ public:
     void setWear (float w) { wear = w; repaint(); }
     /** Lines reserved for the legend above the cap (keeps caps aligned along a row). */
     void setLegendLines (int n) { legendLines = n; repaint(); }
+    /** Print the legend on the cap itself (keypad digits) instead of on the panel above it. */
+    void setLegendOnCap (bool b) { legendOnCap = b; repaint(); }
+    /** A second function printed in a small box under the key (e.g. the mode SHIFT selects). */
+    void setSubLabel (const juce::String& s) { subLabel = s; repaint(); }
+    /** Cap width / height (2 = wide key, 1 = square). */
+    void setCapAspect (float a) { capAspect = a; repaint(); }
     void paintButton (juce::Graphics&, bool over, bool down) override;
 
 private:
@@ -146,6 +154,9 @@ private:
     int seed = 0;
     float wear = 0.0f;
     int legendLines = 2;
+    bool legendOnCap = false;
+    juce::String subLabel;
+    float capAspect = 2.0f;
     bool lit = false, blink = false, hasLed = true;
 };
 

@@ -34,7 +34,7 @@ public:
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent (eng), true);
             setResizable (true, true);
-            setResizeLimits (1180, 760, 2560, 1600);
+            setResizeLimits (1280, 800, 2560, 1600);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
             if (auto* c = getContentComponent())

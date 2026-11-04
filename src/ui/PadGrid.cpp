@@ -64,6 +64,8 @@ void PadGrid::press (int i, int velocity)
     }
     ctx.engine.padDown (pad, velocity);
     pressedAbs[(size_t) i] = pad;
+    if (ctx.onPadHit)
+        ctx.onPadHit (pad, velocity);
     if (! ctx.engine.getSettings().sixteenLevels)
         ctx.setSelectedPad (pad);
     flashPad (i, velocity);

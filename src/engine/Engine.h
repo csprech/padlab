@@ -116,7 +116,8 @@ public:
     /** Preview playhead in frames, or -1 when idle. */
     int getPreviewPosition() const { return previewPosUi.load(); }
 
-    /** Q-Link CCs from MIDI (CC 70..73 -> knob 0..3), delivered on the message thread. */
+    /** Q-Link CCs from MIDI (CC 70..73 -> knob 0..3, CC 74 -> note variation slider = 4),
+        delivered on the message thread. */
     std::function<void (int knob, int value)> onQLinkMidi;
 
 private:

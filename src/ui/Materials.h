@@ -46,7 +46,7 @@ juce::Image led (int diameter, juce::Colour colour, bool on);
 juce::Image screw (int diameter, float angle);
 
 /** A knurled black knob with a white indicator; lighting stays fixed while it turns. */
-juce::Image knob (int diameter, float angle);
+juce::Image knob (int diameter, float angle, juce::Colour cap = juce::Colour (0xff1a1a1a));
 
 /** Cream data wheel (no dimple); phase turns the knurled edge. */
 juce::Image wheel (int diameter, float knurlPhase);

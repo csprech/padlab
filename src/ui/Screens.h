@@ -97,5 +97,10 @@ std::unique_ptr<Screen> createProgramScreen (AppContext&);
 std::unique_ptr<Screen> createSampleScreen (AppContext&);
 std::unique_ptr<Screen> createSamplerScreen (AppContext&);
 std::unique_ptr<Screen> createMixerScreen (AppContext&);
+std::unique_ptr<Screen> createSongScreen (AppContext&);
+std::unique_ptr<Screen> createStepEditScreen (AppContext&);
+std::unique_ptr<Screen> createOtherScreen (AppContext&);
+/** Panel STEP < > while STEP EDIT is showing. */
+void stepEditStep (Screen&, int direction);
 
 } // namespace padlab

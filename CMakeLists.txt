@@ -49,6 +49,7 @@ target_sources(Padlab PRIVATE
   src/ui/Theme.cpp
   src/ui/Materials.cpp
   src/ui/DataWheel.cpp
+  src/ui/PanelParts.cpp
   src/ui/PadGrid.cpp
   src/ui/Screens.cpp
   src/ui/MainScreen.cpp
@@ -56,6 +57,7 @@ target_sources(Padlab PRIVATE
   src/ui/SampleScreen.cpp
   src/ui/SamplerScreen.cpp
   src/ui/MixerScreen.cpp
+  src/ui/ExtraScreens.cpp
   src/ui/MainComponent.cpp
   src/Main.cpp)
 

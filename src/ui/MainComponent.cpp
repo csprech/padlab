@@ -1,6 +1,7 @@
 #include "ui/MainComponent.h"
 #include "core/DrumSynth.h"
 #include "core/ProjectIO.h"
+#include "core/Timing.h"
 #include "ui/Materials.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -12,6 +13,16 @@ namespace
 constexpr char kPadKeys[kPadsPerBank] = { 'z', 'x', 'c', 'v', 'a', 's', 'd', 'f', 'q', 'w', 'e', 'r', '1', '2', '3', '4' };
 
 const char* kQLinkNames[4] = { "TUNE", "CUTOFF", "RESO", "DECAY" };
+
+// soft keys F1..F6 select these screens; their labels sit on the bottom row of the LCD
+constexpr ScreenMode kSoftKeyScreens[6] = { ScreenMode::Main, ScreenMode::StepEdit, ScreenMode::Song,
+                                            ScreenMode::Program, ScreenMode::SampleEdit, ScreenMode::Mixer };
+const char* kSoftKeyLabels[6] = { "MAIN", "STEP", "SONG", "PROGRAM", "TRIM", "MIXER" };
+
+// keypad layout (top-left first) and what SHIFT + key opens, printed under each key
+constexpr int kKeypadOrder[12] = { 7, 8, 9, 4, 5, 6, 1, 2, 3, 10, 0, 11 };
+const char* kKeypadModes[10] = { "MAIN", "SONG", "STEP", "DISK", "SAMPLE", "TRIM", "PROGRAM", "MIXER", "OTHER", "MIDI" };
+
 } // namespace
 
 MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
@@ -24,19 +35,20 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     ctx.showScreen = [this] (ScreenMode m) { showScreen (m); };
     ctx.flashMessage = [this] (const juce::String& m) { flash (m); };
 
-    screens[0] = createMainScreen (ctx);
-    screens[1] = createProgramScreen (ctx);
-    screens[2] = createSampleScreen (ctx);
-    screens[3] = createSamplerScreen (ctx);
-    screens[4] = createMixerScreen (ctx);
+    screens[(size_t) ScreenMode::Main] = createMainScreen (ctx);
+    screens[(size_t) ScreenMode::Program] = createProgramScreen (ctx);
+    screens[(size_t) ScreenMode::SampleEdit] = createSampleScreen (ctx);
+    screens[(size_t) ScreenMode::Sampler] = createSamplerScreen (ctx);
+    screens[(size_t) ScreenMode::Mixer] = createMixerScreen (ctx);
+    screens[(size_t) ScreenMode::Song] = createSongScreen (ctx);
+    screens[(size_t) ScreenMode::StepEdit] = createStepEditScreen (ctx);
+    screens[(size_t) ScreenMode::Other] = createOtherScreen (ctx);
     for (auto& s : screens)
     {
         s->setLookAndFeel (&lcdLnf);
         s->setCachedComponentImage (new theme::LcdInkCache (*s));
         addChildComponent (*s);
     }
-    for (auto* b : { &stopBtn, &undoBtn, &tapBtn })
-        b->setHasLed (false);
 
     for (auto* l : { &modeTitle, &projectTitle, &positionLabel, &statusLabel, &messageLabel })
     {
@@ -50,7 +62,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     projectTitle.setFont (theme::screenFont (14.0f));
     projectTitle.setColour (juce::Label::textColourId, theme::lcd::backlight);
     projectTitle.setJustificationType (juce::Justification::centredRight);
-    positionLabel.setFont (theme::screenFont (21.0f));
+    positionLabel.setFont (theme::screenFont (20.0f));
     positionLabel.setColour (juce::Label::textColourId, theme::lcd::ink);
     statusLabel.setFont (theme::screenFont (13.0f));
     statusLabel.setColour (juce::Label::textColourId, theme::lcd::textDim);
@@ -59,7 +71,33 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     messageLabel.setColour (juce::Label::textColourId, theme::lcd::ink);
     messageLabel.setJustificationType (juce::Justification::centred);
 
+    juce::StringArray tabLabels;
+    for (auto* l : kSoftKeyLabels)
+        tabLabels.add (l);
+    softTabs.setLabels (tabLabels);
+    addAndMakeVisible (softTabs);
+
     addAndMakeVisible (pads);
+
+    // ---- level knobs
+    for (auto* k : { &mainVolume, &recGain })
+    {
+        k->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        k->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        addAndMakeVisible (k);
+    }
+    mainVolume.setRange (0.0, 1.0, 0.001);
+    mainVolume.setValue (engine.getMainVolume(), juce::dontSendNotification);
+    mainVolume.onValueChange = [this] { engine.setMainVolume ((float) mainVolume.getValue()); };
+    mainVolume.setTooltip ("MAIN VOLUME: output level");
+    recGain.setRange (-12.0, 24.0, 0.1);
+    recGain.setValue (0.0, juce::dontSendNotification);
+    recGain.onValueChange = [this] {
+        engine.setRecGainDb ((float) recGain.getValue());
+        flash ("REC GAIN " + juce::String (recGain.getValue(), 1) + " dB");
+    };
+    recGain.setTooltip ("REC GAIN: audio input level for sampling");
+    recGain.getProperties().set ("capColour", (juce::int64) 0xffb0463c);
 
     // ---- Q-Links
     for (int i = 0; i < 4; ++i)
@@ -73,7 +111,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
         addAndMakeVisible (q);
         auto& l = qlinkLabels[(size_t) i];
         l.setText (kQLinkNames[i], juce::dontSendNotification);
-        l.setFont (theme::labelFont (12.0f));
+        l.setFont (theme::labelFont (11.5f));
         l.setColour (juce::Label::textColourId, theme::colours::silk);
         l.setJustificationType (juce::Justification::centred);
         addAndMakeVisible (l);
@@ -89,67 +127,139 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     qlinks[3].setSkewFactorFromMidPoint (300.0);
     qlinks[3].setTextValueSuffix (" ms");
     engine.onQLinkMidi = [this] (int knob, int value) {
+        if (knob == 4)
+            return nvFader.setValue (value);
         auto& q = qlinks[(size_t) knob];
         q.setValue (q.proportionOfLengthToValue (value / 127.0));
     };
 
-    // ---- pad modes
-    fullLevel.onClick = [this] {
-        engine.updateSettings ([] (PerformanceSettings& s) { s.fullLevel = ! s.fullLevel; });
-    };
-    sixteenLevels.setTooltip ("Spread the selected pad over all 16 pads by velocity (shift-click: by tune)");
-    sixteenLevels.onClick = [this] {
-        const bool tuneMode = juce::ModifierKeys::currentModifiers.isShiftDown();
-        const int src = ctx.selectedPad;
-        engine.updateSettings ([&] (PerformanceSettings& s) {
-            s.sixteenLevels = ! s.sixteenLevels;
-            s.sixteenLevelsSource = src;
-            s.sixteenLevelsParam = tuneMode ? 1 : 0;
-        });
+    // ---- note variation: fader + AFTER (on/off); SHIFT + AFTER = ASSIGN (which parameter)
+    nvFader.setSliderStyle (juce::Slider::LinearVertical);
+    nvFader.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    nvFader.setRange (0.0, 127.0, 1.0);
+    nvFader.setValue (64.0, juce::dontSendNotification);
+    nvFader.setDoubleClickReturnValue (true, 64.0);
+    nvFader.onValueChange = [this] {
+        const int v = (int) nvFader.getValue();
+        engine.updateSettings ([v] (PerformanceSettings& s) { s.noteVariationValue = v; });
+        static const char* names[] = { "", "TUNE", "DECAY", "ATTACK", "FILTER" };
         const auto s = engine.getSettings();
-        if (s.sixteenLevels)
-            flash ("16 LEVELS: " + AppContext::padName (src) + (s.sixteenLevelsParam == 1 ? " by tune" : " by velocity"));
+        flash ("NOTE VARIATION " + juce::String (names[(int) s.noteVariationType]) + " " + juce::String (v - 64)
+               + (s.noteVariationOn ? "" : "  (press AFTER to enable)"));
     };
-    noteRepeat.setTooltip ("Hold pads to repeat at the Note Repeat rate. Drag up/down on a held pad for pressure.");
-    noteRepeat.onClick = [this] {
-        engine.updateSettings ([] (PerformanceSettings& s) { s.noteRepeat = ! s.noteRepeat; });
+    nvFader.setTooltip ("NOTE VARIATION: varies tune / decay / attack / filter of the selected pad as you play it");
+    addAndMakeVisible (nvFader);
+    afterBtn.setSubLabel ("ASSIGN");
+    afterBtn.setLegendLines (1);
+    afterBtn.onClick = [this] {
+        if (shiftActive())
+        {
+            shiftLatched = false;
+            static const char* names[] = { "", "TUNE", "DECAY", "ATTACK", "FILTER" };
+            engine.updateSettings ([] (PerformanceSettings& s) {
+                s.noteVariationType = (VariationType) ((int) s.noteVariationType % 4 + 1);
+            });
+            flash ("NOTE VARIATION ASSIGN: " + juce::String (names[(int) engine.getSettings().noteVariationType]));
+            return;
+        }
+        const int pad = ctx.selectedPad;
+        engine.updateSettings ([pad] (PerformanceSettings& s) {
+            s.noteVariationOn = ! s.noteVariationOn;
+            if (s.noteVariationPad >= 0)
+                s.noteVariationPad = pad;
+        });
+        flash (engine.getSettings().noteVariationOn ? "NOTE VARIATION ON (" + AppContext::padName (pad) + ")" : "NOTE VARIATION OFF");
     };
-    erase.setTooltip ("Hold ERASE and hold pads while playing to delete their notes");
-    erase.onStateChange = [this] {
-        const bool down = erase.isDown();
-        engine.updateSettings ([down] (PerformanceSettings& s) { s.eraseHeld = down; });
-    };
-    trackMute.onClick = [this] {
-        ctx.padView = ctx.padView == PadView::TrackMute ? PadView::Play : PadView::TrackMute;
-        ctx.changed();
-    };
-    padMute.onClick = [this] {
-        ctx.padView = ctx.padView == PadView::PadMute ? PadView::Play : PadView::PadMute;
-        ctx.changed();
-    };
-    for (auto* b : { &fullLevel, &sixteenLevels, &noteRepeat, &erase, &trackMute, &padMute })
-        addAndMakeVisible (b);
+    addAndMakeVisible (afterBtn);
 
-    for (int i = 0; i < kNumBanks; ++i)
+    // ---- keypad
+    for (int i = 0; i < 12; ++i)
     {
-        banks[(size_t) i] = std::make_unique<theme::HardButton> (juce::String::charToString ((juce::juce_wchar) ('A' + i)));
-        banks[(size_t) i]->onClick = [this, i] { setBank (i); };
-        banks[(size_t) i]->setLegendLines (1);
-        addAndMakeVisible (*banks[(size_t) i]);
+        const int key = kKeypadOrder[i];
+        const juce::String text = key == 10 ? "SHIFT" : key == 11 ? "ENTER" : juce::String (key);
+        auto& b = keypad[(size_t) i];
+        b = std::make_unique<theme::HardButton> (text, theme::colours::ledRed,
+                                                 key == 10 ? Cap::Dark : key == 11 ? Cap::Light : Cap::Blue);
+        b->setLegendOnCap (true);
+        b->setCapAspect (1.7f);
+        b->setHasLed (key == 10);
+        if (key < 10)
+            b->setSubLabel (kKeypadModes[key]);
+        b->onClick = [this, key] { keypadPressed (key); };
+        addAndMakeVisible (*b);
     }
 
-    // ---- screen modes
-    mainBtn.onClick = [this] { showScreen (ScreenMode::Main); };
-    progBtn.onClick = [this] { showScreen (ScreenMode::Program); };
-    sampleBtn.onClick = [this] { showScreen (ScreenMode::SampleEdit); };
-    samplerBtn.onClick = [this] { showScreen (ScreenMode::Sampler); };
-    mixerBtn.onClick = [this] { showScreen (ScreenMode::Mixer); };
-    for (auto* b : { &mainBtn, &progBtn, &sampleBtn, &samplerBtn, &mixerBtn })
+    // ---- DATA area
+    mainScreenBtn.setHasLed (false);
+    mainScreenBtn.onClick = [this] { cancelEntry(); showScreen (ScreenMode::Main); };
+    openWindowBtn.setHasLed (false);
+    openWindowBtn.onClick = [this] { openWindow(); };
+    dataWheel.onStep = [this] (int steps) { dataStep (steps); };
+    cursorPad.onMove = [this] (int dx, int dy) { moveCursor (dx, dy); };
+    for (auto* c : std::initializer_list<juce::Component*> { &mainScreenBtn, &openWindowBtn, &dataWheel, &cursorPad })
+        addAndMakeVisible (c);
+
+    // TAP TEMPO / NOTE REPEAT: tap it for tempo, hold it while playing pads for note repeat
+    tapBtn.setTooltip ("Tap for tempo. Hold while playing pads for note repeat (N latches it).");
+    tapBtn.onStateChange = [this] {
+        const bool down = tapBtn.isDown();
+        if (down && tapPressedAt == 0)
+        {
+            tapPressedAt = juce::Time::getMillisecondCounter();
+            repeatWasLatched = engine.getSettings().noteRepeat;
+            padHitWhileTapHeld = false;
+            engine.updateSettings ([] (PerformanceSettings& s) { s.noteRepeat = true; });
+        }
+        else if (! down && tapPressedAt != 0)
+        {
+            const auto held = juce::Time::getMillisecondCounter() - tapPressedAt;
+            tapPressedAt = 0;
+            engine.updateSettings ([l = repeatWasLatched] (PerformanceSettings& s) { s.noteRepeat = l; });
+            if (held < 350 && ! padHitWhileTapHeld)
+                tapTempo();
+        }
+    };
+    undoBtn.setHasLed (false);
+    undoBtn.onClick = [this] {
+        const auto what = engine.getUndoDescription();
+        flash (engine.undo() ? "Undo " + what : "Nothing to undo");
+        ctx.changed();
+    };
+    eraseBtn.setTooltip ("Hold ERASE and hold pads while playing to delete their notes");
+    eraseBtn.onStateChange = [this] {
+        const bool down = eraseBtn.isDown();
+        engine.updateSettings ([down] (PerformanceSettings& s) { s.eraseHeld = down; });
+    };
+    for (auto* b : { &tapBtn, &undoBtn, &eraseBtn })
+    {
+        b->setCapAspect (1.6f);
         addAndMakeVisible (b);
+    }
+
+    // ---- LOCATE
+    stepBackBtn.onClick = [this] { locateStep (-1); };
+    stepFwdBtn.onClick = [this] { locateStep (1); };
+    barBackBtn.onClick = [this] { locateBar (-1); };
+    barFwdBtn.onClick = [this] { locateBar (1); };
+    gotoBtn.onClick = [this] {
+        if (entry == Entry::GoTo && entryDigits.isNotEmpty())
+            return commitEntry();
+        entry = Entry::GoTo;
+        entryDigits.clear();
+        messageUntil = 0;
+        messageLabel.setText ("GO TO BAR: _   (keypad, then ENTER)", juce::dontSendNotification);
+    };
+    for (auto* b : { &stepBackBtn, &stepFwdBtn, &gotoBtn, &barBackBtn, &barFwdBtn })
+    {
+        b->setHasLed (false);
+        b->setCapAspect (1.6f);
+        addAndMakeVisible (b);
+    }
 
     // ---- transport
     recBtn.onClick = [this] { recordPressed (RecordMode::Record); };
     overdubBtn.onClick = [this] { recordPressed (RecordMode::Overdub); };
+    stopBtn.setHasLed (false);
     stopBtn.onClick = [this] {
         const auto now = juce::Time::getMillisecondCounter();
         if (engine.getTransportState() == Transport::State::Stopped && now - lastStopMs < 400)
@@ -159,38 +269,85 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     };
     playBtn.onClick = [this] { engine.play (false); };
     playStartBtn.onClick = [this] { engine.play (true); };
-    undoBtn.onClick = [this] {
-        const auto what = engine.getUndoDescription();
-        flash (engine.undo() ? "Undo " + what : "Nothing to undo");
+    for (auto* b : { &recBtn, &overdubBtn, &stopBtn, &playBtn, &playStartBtn })
+    {
+        b->setCapAspect (1.35f); // big, nearly square transport keys
+        addAndMakeVisible (b);
+    }
+
+    // ---- soft keys
+    for (int i = 0; i < 6; ++i)
+    {
+        auto& k = softKeys[(size_t) i];
+        k = std::make_unique<theme::HardButton> ("F" + juce::String (i + 1), theme::colours::ledRed, Cap::Light);
+        k->setHasLed (false);
+        k->setLegendLines (1);
+        k->onClick = [this, i] { cancelEntry(); showScreen (kSoftKeyScreens[i]); };
+        addAndMakeVisible (*k);
+    }
+
+    // ---- pad plate column
+    bankLeds.onSelect = [this] (int b) { setBank (b); };
+    addAndMakeVisible (bankLeds);
+    padBankBtn.setHasLed (false);
+    padBankBtn.setTooltip ("Next pad bank (SHIFT: previous). Or click a bank letter.");
+    padBankBtn.onClick = [this] {
+        const int b = engine.getCurrentBank();
+        const bool back = shiftActive();
+        shiftLatched = false;
+        setBank ((b + (back ? kNumBanks - 1 : 1)) % kNumBanks);
+    };
+    fullLevel.onClick = [this] { engine.updateSettings ([] (PerformanceSettings& s) { s.fullLevel = ! s.fullLevel; }); };
+    sixteenLevels.setTooltip ("Spread the selected pad over all 16 pads (by velocity, tune, decay, attack or filter: see OTHER)");
+    sixteenLevels.onClick = [this] {
+        const int src = ctx.selectedPad;
+        engine.updateSettings ([&] (PerformanceSettings& s) {
+            s.sixteenLevels = ! s.sixteenLevels;
+            s.sixteenLevelsSource = src;
+        });
+        const auto s = engine.getSettings();
+        static const char* by[] = { "velocity", "tune", "decay", "attack", "filter" };
+        if (s.sixteenLevels)
+            flash ("16 LEVELS: " + AppContext::padName (src) + " by " + by[juce::jlimit (0, 4, s.sixteenLevelsParam)]);
+    };
+    trackMute.onClick = [this] {
+        ctx.padView = ctx.padView == PadView::TrackMute ? PadView::Play : PadView::TrackMute;
         ctx.changed();
     };
-    tapBtn.onClick = [this] { tapTempo(); };
-    for (auto* b : { &recBtn, &overdubBtn, &stopBtn, &playBtn, &playStartBtn, &undoBtn, &tapBtn })
+    padMute.onClick = [this] {
+        ctx.padView = ctx.padView == PadView::PadMute ? PadView::Play : PadView::PadMute;
+        ctx.changed();
+    };
+    for (auto* b : { &padBankBtn, &fullLevel, &sixteenLevels, &trackMute, &padMute })
         addAndMakeVisible (b);
 
-    newBtn.onClick = [this] { newProject(); };
-    openBtn.onClick = [this] { openProject(); };
-    saveBtn.onClick = [this] { saveProject (false); };
-    settingsBtn.onClick = [this] { showAudioSettings(); };
-    for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
-        addAndMakeVisible (b);
+    floppy.onClick = [this] { showDiskMenu(); };
+    floppy.setTooltip ("DISK: new, open, save, audio/MIDI setup");
+    addAndMakeVisible (floppy);
 
     // worn from use: the keys you hit all day are polished smooth
     playBtn.setWear (0.7f);
     stopBtn.setWear (0.8f);
     recBtn.setWear (0.45f);
     overdubBtn.setWear (0.35f);
-    mainBtn.setWear (0.4f);
-    banks[0]->setWear (0.35f);
+    mainScreenBtn.setWear (0.4f);
+    softKeys[0]->setWear (0.3f);
 
-    dataWheel.onStep = [this] (int steps) { dataStep (steps); };
-    addAndMakeVisible (dataWheel);
     addMouseListener (&touchTracker, true);
 
     addAndMakeVisible (playhead);
     addAndMakeVisible (glass); // LCD glass sits on top of the screen contents
 
-    setSize (1440, 880);
+    // open at a comfortable size for the display it's on
+    auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+    const auto area = display != nullptr ? display->userBounds.toNearestInt() : juce::Rectangle<int> (0, 0, 1440, 900);
+    setSize (juce::jlimit (1280, 1640, (int) (area.getWidth() * 0.96f)), juce::jlimit (800, 1010, (int) (area.getHeight() * 0.93f)));
+    if (auto* forced = std::getenv ("PADLAB_WINDOW_SIZE")) // e.g. "1280x800", for testing layouts
+    {
+        const auto wh = juce::StringArray::fromTokens (forced, "x", {});
+        if (wh.size() == 2)
+            setSize (juce::jmax (1280, wh[0].getIntValue()), juce::jmax (800, wh[1].getIntValue()));
+    }
     showScreen (ScreenMode::Main);
     loadQLinksFromPad();
 
@@ -234,108 +391,171 @@ MainComponent::~MainComponent()
 
 void MainComponent::resized()
 {
-    auto r = getLocalBounds().reduced (26, 22);
-    rightPanel = r.removeFromRight (juce::jlimit (420, 560, (int) (r.getWidth() * 0.345f)));
-    r.removeFromRight (26);
+    auto r = getLocalBounds().reduced (24, 20);
+    rightPanel = r.removeFromRight (juce::jlimit (470, 640, (int) (r.getWidth() * 0.40f)));
+    r.removeFromRight (24);
 
-    // ---- left: brand + disk keys, LCD, then mode/transport keys beside the DATA wheel
+    // ---- left: brand, then [level knobs | LCD], soft keys, and the lower control block
     auto left = r;
-    brandArea = left.removeFromTop (46);
-    left.removeFromTop (6);
-    auto bottom = left.removeFromBottom (160);
-    left.removeFromBottom (10);
+    brandArea = left.removeFromTop (40);
+    left.removeFromTop (4);
+    lowerArea = left.removeFromBottom (juce::jlimit (250, 296, (int) (left.getHeight() * 0.33f)));
+    left.removeFromBottom (6);
+    softKeyArea = left.removeFromBottom (42);
+    knobArea = left.removeFromLeft (84);
+    left.removeFromLeft (10);
     screenArea = left;
-    lcdArea = screenArea.reduced (18, 16);
+    lcdArea = screenArea.reduced (16, 14);
     glass.setBounds (lcdArea);
     playhead.setBounds (lcdArea);
-
-    wheelArea = bottom.removeFromRight (juce::jmin (190, bottom.getHeight() + 24));
-    bottom.removeFromRight (14);
-    dataWheel.setBounds (wheelArea.withTrimmedTop (16));
-    modeArea = bottom.removeFromTop (74);
-    bottom.removeFromTop (8);
-    transportArea = bottom;
 
     auto inner = lcdArea.reduced (6);
     auto titleBar = inner.removeFromTop (22);
     modeTitle.setBounds (titleBar.removeFromLeft (titleBar.getWidth() / 2).withTrimmedLeft (6));
     projectTitle.setBounds (titleBar.withTrimmedRight (6));
-    statusArea = inner.removeFromBottom (30);
+    tabArea = inner.removeFromBottom (22);
+    statusArea = inner.removeFromBottom (28);
     auto st = statusArea.reduced (6, 2);
-    positionLabel.setBounds (st.removeFromLeft (220));
-    statusLabel.setBounds (st.removeFromRight (380));
+    positionLabel.setBounds (st.removeFromLeft (200));
+    statusLabel.setBounds (st.removeFromRight (juce::jmin (360, st.getWidth() / 2)));
     messageLabel.setBounds (st);
-    for (auto& s : screens)
-        s->setBounds (inner);
-
+    // Screens are designed for an LCD about 790 x 360 px; on a smaller panel they're scaled down
+    // as a whole (like a smaller display), never squeezed.
     {
-        auto m = modeArea.withTrimmedTop (16);
-        const int w = juce::jmin (96, (m.getWidth() - 4 * 6) / 5);
-        for (auto* b : { &mainBtn, &progBtn, &sampleBtn, &samplerBtn, &mixerBtn })
+        const float scale = juce::jmin (1.0f, inner.getWidth() / 790.0f, inner.getHeight() / 360.0f);
+        const int w = (int) std::floor (inner.getWidth() / scale), h = (int) std::floor (inner.getHeight() / scale);
+        for (auto& s : screens)
         {
-            b->setBounds (m.removeFromLeft (w));
-            m.removeFromLeft (6);
+            s->setTransform ({});
+            s->setBounds (0, 0, w, h);
+            s->setTransform (juce::AffineTransform::scale (scale).translated ((float) inner.getX(), (float) inner.getY()));
         }
     }
+    softTabs.setBounds (tabArea);
+
+    // soft keys line up under their LCD labels
     {
-        // disk keys live in the brand strip, between the badge and the tagline
-        fileArea = brandArea.withTrimmedLeft (250).withTrimmedRight (180);
-        const int unit = juce::jmin (78, (int) ((fileArea.getWidth() - 18) / 4.35f));
-        const int total = unit * 3 + (int) (unit * 1.35f) + 18;
-        fileArea = fileArea.withSizeKeepingCentre (total, fileArea.getHeight());
-        auto files = fileArea.withTrimmedTop (16);
-        for (auto* b : { &newBtn, &openBtn, &saveBtn, &settingsBtn })
+        std::vector<int> centres;
+        const int cellW = tabArea.getWidth() / 6;
+        const int kw = juce::jmin (84, cellW - 10);
+        for (int i = 0; i < 6; ++i)
         {
-            b->setBounds (files.removeFromLeft (b == &settingsBtn ? (int) (unit * 1.35f) : unit));
-            files.removeFromLeft (6);
+            const int cx = tabArea.getX() + cellW * i + cellW / 2;
+            centres.push_back (cx - tabArea.getX());
+            softKeys[(size_t) i]->setBounds (juce::Rectangle<int> (kw, softKeyArea.getHeight()).withCentre ({ cx, softKeyArea.getCentreY() }));
         }
-    }
-    {
-        auto t = transportArea.withTrimmedTop (16);
-        const int w = juce::jmin (104, (t.getWidth() - 6 * 8) / 7);
-        for (auto* b : { &recBtn, &overdubBtn, &stopBtn, &playBtn, &playStartBtn })
-        {
-            b->setBounds (t.removeFromLeft (w));
-            t.removeFromLeft (8);
-        }
-        tapBtn.setBounds (t.removeFromRight (w));
-        t.removeFromRight (8);
-        undoBtn.setBounds (t.removeFromRight (w));
+        softTabs.setKeyCentres (centres);
     }
 
-    // ---- right: brand, Q-links, pad modes, banks, pad deck
-    auto rp = rightPanel;
-    deckArea = rp.removeFromBottom (PadGrid::heightForWidth (rp.getWidth()));
-    pads.setBounds (deckArea);
-    rp.removeFromBottom (10);
-    bankArea = rp.removeFromBottom (58);
-    rp.removeFromBottom (4);
-    padModeArea = rp.removeFromBottom (72);
-    rp.removeFromBottom (4);
-    qlinkArea = rp;
+    // level knobs beside the LCD
+    {
+        auto k = knobArea.withTrimmedTop (20);
+        auto vol = k.removeFromTop (100);
+        mainVolume.setBounds (vol.withTrimmedTop (16).withSizeKeepingCentre (70, 70));
+        k.removeFromTop (14);
+        auto gain = k.removeFromTop (100);
+        recGain.setBounds (gain.withTrimmedTop (16).withSizeKeepingCentre (70, 70));
+    }
 
-    auto qrow = qlinkArea.withTrimmedTop (18);
-    const int qw = qrow.getWidth() / 4;
-    for (int i = 0; i < 4; ++i)
+    // ---- lower block: [note variation] [keypad] [data] [keys + cursor], then [locate | transport]
     {
-        auto cell = qrow.removeFromLeft (qw).reduced (4, 0);
-        qlinkLabels[(size_t) i].setBounds (cell.removeFromBottom (18));
-        qlinks[(size_t) i].setBounds (cell.withSizeKeepingCentre (juce::jmin (cell.getWidth(), cell.getHeight() + 16), cell.getHeight()));
+        auto lo = lowerArea;
+        nvArea = lo.removeFromLeft (78);
+        lo.removeFromLeft (14);
+        auto rowB = lo.removeFromBottom (78);
+        lo.removeFromBottom (8);
+        keypadArea = lo.removeFromLeft (juce::jmin (210, (int) (lo.getWidth() * 0.31f)));
+        lo.removeFromLeft (14);
+        wheelArea = lo.removeFromLeft (juce::jmin (176, lo.getHeight() + 6));
+        lo.removeFromLeft (14);
+        clusterArea = lo;
+        cursorArea = clusterArea.removeFromRight (juce::jmin (128, clusterArea.getWidth() / 2));
+        clusterArea.removeFromRight (8);
+
+        locateArea = rowB.removeFromLeft (rowB.getWidth() / 2 - 8);
+        rowB.removeFromLeft (16);
+        transportArea = rowB;
+
+        // note variation: AFTER key on top, fader below
+        auto nv = nvArea.reduced (6, 4).withTrimmedTop (26);
+        afterBtn.setBounds (nv.removeFromTop (58));
+        nv.removeFromTop (4);
+        nvFader.setBounds (nv.reduced (4, 2));
+
+        // keypad 3 x 4
+        auto kp = keypadArea;
+        const int kw = kp.getWidth() / 3, kh = kp.getHeight() / 4;
+        for (int i = 0; i < 12; ++i)
+            keypad[(size_t) i]->setBounds (kp.getX() + (i % 3) * kw, kp.getY() + (i / 3) * kh, kw, kh);
+
+        // MAIN SCREEN / OPEN WINDOW above the wheel
+        auto w = wheelArea;
+        auto top = w.removeFromTop (46);
+        mainScreenBtn.setBounds (top.removeFromLeft (top.getWidth() / 2));
+        openWindowBtn.setBounds (top);
+        w.removeFromTop (14);
+        dataWheel.setBounds (w);
+
+        // TAP / UNDO / ERASE stacked
+        auto c = clusterArea;
+        const int bh = c.getHeight() / 3;
+        tapBtn.setBounds (c.removeFromTop (bh));
+        undoBtn.setBounds (c.removeFromTop (bh));
+        eraseBtn.setBounds (c);
+        cursorPad.setBounds (cursorArea.withTrimmedTop (18).withSizeKeepingCentre (
+            juce::jmin (cursorArea.getWidth(), 120), juce::jmin (cursorArea.getHeight() - 18, 136)));
+
+        auto placeRow = [] (juce::Rectangle<int> row, std::initializer_list<juce::Component*> keys) {
+            row = row.withTrimmedTop (14);
+            const int n = (int) keys.size();
+            const int kwid = row.getWidth() / n;
+            for (auto* k : keys)
+                k->setBounds (row.removeFromLeft (kwid));
+        };
+        placeRow (locateArea, { &stepBackBtn, &stepFwdBtn, &gotoBtn, &barBackBtn, &barFwdBtn });
+        placeRow (transportArea, { &recBtn, &overdubBtn, &stopBtn, &playBtn, &playStartBtn });
     }
-    auto modeRow = padModeArea.withTrimmedTop (16);
-    const int mw = (modeRow.getWidth() - 5 * 6) / 6;
-    for (auto* b : { &fullLevel, &sixteenLevels, &noteRepeat, &erase, &trackMute, &padMute })
+
+    // ---- right: floppy + vents + badge, Q-Links, pad plate
     {
-        b->setBounds (modeRow.removeFromLeft (mw));
-        modeRow.removeFromLeft (6);
+        auto rp = rightPanel;
+        topRightArea = rp.removeFromTop (124);
+        rp.removeFromTop (4);
+        qlinkArea = rp.removeFromTop (106);
+        rp.removeFromTop (8);
+        plateArea = rp;
+
+        auto tr = topRightArea;
+        auto fl = tr.removeFromLeft ((int) (tr.getWidth() * 0.40f));
+        floppy.setBounds (fl.withTrimmedTop (6).withHeight (58).reduced (2, 0));
+        tr.removeFromLeft (18);
+        ventArea = tr.removeFromTop (66).withTrimmedTop (6);
+        badgeArea = tr;
+
+        auto qrow = qlinkArea.withTrimmedTop (18);
+        const int qw = qrow.getWidth() / 4;
+        for (int i = 0; i < 4; ++i)
+        {
+            auto cell = qrow.removeFromLeft (qw).reduced (4, 0);
+            qlinkLabels[(size_t) i].setBounds (cell.removeFromBottom (16));
+            qlinks[(size_t) i].setBounds (cell.withSizeKeepingCentre (juce::jmin (cell.getWidth(), cell.getHeight() + 16), cell.getHeight()));
+        }
+
+        auto plate = plateArea.reduced (10, 8);
+        plate.removeFromTop (18); // printed DRUMS header
+        stripArea = plate.removeFromLeft (84);
+        plate.removeFromLeft (6);
+        padsArea = plate;
+        pads.setBounds (padsArea);
+
+        auto s = stripArea.reduced (4, 6);
+        bankLeds.setBounds (s.removeFromTop (78));
+        s.removeFromTop (4);
+        const int bh = juce::jmin (60, s.getHeight() / 5);
+        for (auto* b : { &padBankBtn, &fullLevel, &sixteenLevels, &trackMute, &padMute })
+            b->setBounds (s.removeFromTop (bh));
     }
-    auto bankRow = bankArea.withTrimmedTop (16);
-    const int bw = (bankRow.getWidth() - 7 * 6) / 8;
-    for (auto& b : banks)
-    {
-        b->setBounds (bankRow.removeFromLeft (bw));
-        bankRow.removeFromLeft (6);
-    }
+    background = {};
 }
 
 namespace
@@ -345,14 +565,48 @@ namespace
     {
         using namespace padlab::theme;
         auto r = row.removeFromTop (14);
-        g.setFont (labelFont (11.5f));
+        g.setFont (labelFont (11.0f));
         const int tw = (int) std::ceil (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text)) + 14;
         auto textR = r.withSizeKeepingCentre (tw, r.getHeight());
         g.setColour ((light ? colours::silkLight : colours::silk).withAlpha (0.55f));
         const float y = (float) r.getCentreY();
         g.drawLine ((float) r.getX(), y, (float) textR.getX(), y, 1.0f);
         g.drawLine ((float) textR.getRight(), y, (float) r.getRight(), y, 1.0f);
-        drawSilk (g, text, textR, juce::Justification::centred, 11.5f, light);
+        drawSilk (g, text, textR, juce::Justification::centred, 11.0f, light);
+    }
+
+    /** Bevelled opening: four chamfer faces lit by a top-left light. */
+    void chamfer (juce::Graphics& g, juce::Rectangle<float> outer, float depth, bool recessed)
+    {
+        auto inner = outer.reduced (depth);
+        auto face = [&] (juce::Point<float> a, juce::Point<float> b, juce::Point<float> c, juce::Point<float> d, juce::Colour col) {
+            juce::Path p;
+            p.startNewSubPath (a);
+            p.lineTo (b);
+            p.lineTo (c);
+            p.lineTo (d);
+            p.closeSubPath();
+            g.setColour (col);
+            g.fillPath (p);
+        };
+        const auto litC = juce::Colours::white.withAlpha (0.20f), darkC = juce::Colours::black.withAlpha (0.45f);
+        const auto top = recessed ? darkC : litC, bottom = recessed ? litC : darkC;
+        const auto left = recessed ? juce::Colours::black.withAlpha (0.32f) : juce::Colours::white.withAlpha (0.12f);
+        const auto right = recessed ? juce::Colours::white.withAlpha (0.08f) : juce::Colours::black.withAlpha (0.25f);
+        face (outer.getTopLeft(), outer.getTopRight(), inner.getTopRight(), inner.getTopLeft(), top);
+        face (outer.getBottomLeft(), outer.getBottomRight(), inner.getBottomRight(), inner.getBottomLeft(), bottom);
+        face (outer.getTopLeft(), outer.getBottomLeft(), inner.getBottomLeft(), inner.getTopLeft(), left);
+        face (outer.getTopRight(), outer.getBottomRight(), inner.getBottomRight(), inner.getTopRight(), right);
+    }
+
+    /** A thin printed outline box with a title, grouping a section of controls. */
+    void groupBox (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& title)
+    {
+        using namespace padlab::theme;
+        g.setColour (colours::silk.withAlpha (0.5f));
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 3.0f, 1.0f);
+        g.setFont (labelFont (10.0f));
+        drawSilk (g, title, r.removeFromTop (24).reduced (2, 2), juce::Justification::centred, 10.0f);
     }
 }
 
@@ -370,42 +624,6 @@ void MainComponent::paint (juce::Graphics& g)
     g.drawImageTransformed (background, juce::AffineTransform::scale (1.0f / sc));
 }
 
-namespace
-{
-    /** Bevelled opening: four chamfer faces lit by a top-left light. */
-    void chamfer (juce::Graphics& g, juce::Rectangle<float> outer, float depth, bool recessed)
-    {
-        auto inner = outer.reduced (depth);
-        auto face = [&] (juce::Point<float> a, juce::Point<float> b, juce::Point<float> c, juce::Point<float> d, juce::Colour col) {
-            juce::Path p;
-            p.startNewSubPath (a);
-            p.lineTo (b);
-            p.lineTo (c);
-            p.lineTo (d);
-            p.closeSubPath();
-            g.setColour (col);
-            g.fillPath (p);
-        };
-        // a recess's top face looks down (shadowed); a raised edge's top face looks up (lit)
-        const auto litC = juce::Colours::white.withAlpha (0.20f), darkC = juce::Colours::black.withAlpha (0.45f);
-        const auto top = recessed ? darkC : litC, bottom = recessed ? litC : darkC;
-        const auto left = recessed ? juce::Colours::black.withAlpha (0.32f) : juce::Colours::white.withAlpha (0.12f);
-        const auto right = recessed ? juce::Colours::white.withAlpha (0.08f) : juce::Colours::black.withAlpha (0.25f);
-        face (outer.getTopLeft(), outer.getTopRight(), inner.getTopRight(), inner.getTopLeft(), top);
-        face (outer.getBottomLeft(), outer.getBottomRight(), inner.getBottomRight(), inner.getBottomLeft(), bottom);
-        face (outer.getTopLeft(), outer.getBottomLeft(), inner.getBottomLeft(), inner.getTopLeft(), left);
-        face (outer.getTopRight(), outer.getBottomRight(), inner.getBottomRight(), inner.getTopRight(), right);
-    }
-
-    void groove (juce::Graphics& g, juce::Line<float> line)
-    {
-        g.setColour (juce::Colours::black.withAlpha (0.32f));
-        g.drawLine (line, 1.2f);
-        g.setColour (juce::Colours::white.withAlpha (0.30f));
-        g.drawLine (line.getStart().x + 1.2f, line.getStart().y + 1.2f, line.getEnd().x + 1.2f, line.getEnd().y + 1.2f, 1.0f);
-    }
-}
-
 void MainComponent::renderBackground (juce::Graphics& g, float sc)
 {
     using namespace theme;
@@ -417,7 +635,7 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
         return juce::FillType (tile, juce::AffineTransform::scale (1.0f / sc));
     };
 
-    // ---- chassis: powder-coated steel lit from the top-left
+    // ---- chassis: one powder-coated top panel lit from the top-left
     g.setFillType (tileFill (colours::chassis, 7));
     g.fillAll();
     g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.07f), 0, 0, juce::Colours::transparentWhite,
@@ -426,51 +644,58 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
     g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, 0, bounds.getHeight() * 0.35f,
                                              juce::Colours::black.withAlpha (0.10f), 0, bounds.getBottom(), false));
     g.fillAll();
-    // rounded case edge
     chamfer (g, bounds, 5.0f, false);
+    // the front lip: the panel folds down at the bottom edge
+    {
+        auto lip = bounds.withTop (bounds.getBottom() - 9.0f).reduced (5.0f, 0.0f).withTrimmedBottom (4.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.10f));
+        g.fillRect (lip);
+        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.drawLine (lip.getX(), lip.getY(), lip.getRight(), lip.getY(), 1.0f);
+    }
 
-    // panel joint between the screen half and the pad half
-    const float jointX = (float) rightPanel.getX() - 13.0f;
-    groove (g, { jointX, 6.0f, jointX, bounds.getBottom() - 6.0f });
-
-    // screws
-    const float sr = 6.5f;
+    const float sr = 6.0f;
     drawScrew (g, { 14.0f, 13.0f }, sr, 0.4f);
     drawScrew (g, { bounds.getRight() - 14.0f, 13.0f }, sr, 1.2f);
-    drawScrew (g, { 14.0f, bounds.getBottom() - 13.0f }, sr, 2.1f);
-    drawScrew (g, { bounds.getRight() - 14.0f, bounds.getBottom() - 13.0f }, sr, 0.9f);
-    drawScrew (g, { jointX + 0.5f, 13.0f }, sr, 1.7f);
-    drawScrew (g, { jointX + 0.5f, bounds.getBottom() - 13.0f }, sr, 0.2f);
+    drawScrew (g, { 14.0f, bounds.getBottom() - 15.0f }, sr, 2.1f);
+    drawScrew (g, { bounds.getRight() - 14.0f, bounds.getBottom() - 15.0f }, sr, 0.9f);
 
-    // ---- pad deck: a recessed plate in a darker finish
-    auto deck = deckArea.toFloat().expanded (9.0f, 7.0f);
+    // ---- brand (top-left) and product descriptor
     {
-        juce::Path deckPath;
-        deckPath.addRoundedRectangle (deck, 10.0f);
-        g.saveState();
-        g.reduceClipRegion (deckPath);
-        g.setFillType (tileFill (colours::deck, 11));
-        g.fillRect (deck);
-        // inner shadow: the lip of the chassis overhangs the deck at the top-left
-        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.40f), 0, deck.getY(),
-                                                 juce::Colours::transparentBlack, 0, deck.getY() + 18.0f, false));
-        g.fillRect (deck.withHeight (18.0f));
-        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.25f), deck.getX(), 0,
-                                                 juce::Colours::transparentBlack, deck.getX() + 14.0f, 0, false));
-        g.fillRect (deck.withWidth (14.0f));
-        g.restoreState();
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
-        g.drawRoundedRectangle (deck.translated (0.0f, 1.2f).expanded (0.6f), 10.5f, 1.2f);
-        g.setColour (juce::Colours::black.withAlpha (0.45f));
-        g.drawRoundedRectangle (deck, 10.0f, 1.0f);
+        auto b = brandArea.reduced (2, 0);
+        const float h = 34.0f;
+        juce::GlyphArrangement ga;
+        ga.addLineOfText (labelFont (h), "PADLAB", (float) b.getX(), (float) b.getCentreY() + h * 0.32f);
+        juce::Path wordmark;
+        ga.createPath (wordmark);
+        wordmark.applyTransform (juce::AffineTransform::shear (-0.18f, 0.0f).translated (b.getCentreY() * 0.18f, 0.0f));
+        g.setColour (juce::Colours::white.withAlpha (0.25f));
+        g.fillPath (wordmark, juce::AffineTransform::translation (0.0f, 1.0f));
+        g.setColour (colours::keyRed.darker (0.15f));
+        g.fillPath (wordmark);
+        auto desc = b.withTrimmedLeft ((int) wordmark.getBounds().getRight() - b.getX() + 20);
+        drawSilk (g, "DRUM SAMPLER  /  960 PPQN MIDI SEQUENCER\nSAMPLING GROOVE WORKSTATION", desc.withWidth (juce::jmin (desc.getWidth(), 360)),
+                  juce::Justification::centredLeft, 10.5f);
+    }
+
+    // ---- level knobs: printed names and MIN / MAX
+    {
+        auto k = knobArea.withTrimmedTop (20);
+        auto vol = k.removeFromTop (100);
+        drawSilk (g, "MAIN VOLUME", vol.removeFromTop (14), juce::Justification::centred, 10.0f);
+        drawSilk (g, "MIN          MAX", vol.withTrimmedTop (vol.getHeight() - 12), juce::Justification::centred, 8.0f);
+        k.removeFromTop (14);
+        auto gain = k.removeFromTop (100);
+        drawSilk (g, "REC GAIN", gain.removeFromTop (14), juce::Justification::centred, 10.0f);
+        drawSilk (g, "MIN          MAX", gain.withTrimmedTop (gain.getHeight() - 12), juce::Justification::centred, 8.0f);
     }
 
     // ---- LCD bezel: moulded dark plastic with a chamfered window
     auto bez = screenArea.toFloat();
-    juce::DropShadow (juce::Colours::black.withAlpha (0.45f), 10, { 0, 4 }).drawForRectangle (g, screenArea.reduced (6));
+    juce::DropShadow (juce::Colours::black.withAlpha (0.40f), 10, { 0, 4 }).drawForRectangle (g, screenArea.reduced (6));
     {
         juce::Path bezPath;
-        bezPath.addRoundedRectangle (bez, 12.0f);
+        bezPath.addRoundedRectangle (bez, 8.0f);
         g.saveState();
         g.reduceClipRegion (bezPath);
         g.setFillType (tileFill (colours::bezel, 13));
@@ -478,64 +703,81 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
         g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.10f), 0, bez.getY(),
                                                  juce::Colours::black.withAlpha (0.25f), 0, bez.getBottom(), false));
         g.fillRect (bez);
-        // specular rim along the top edge of the moulding
         g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.22f), 0, bez.getY(),
                                                  juce::Colours::transparentWhite, 0, bez.getY() + 6.0f, false));
         g.fillRect (bez.withHeight (6.0f));
         g.restoreState();
         g.setColour (juce::Colours::black.withAlpha (0.6f));
-        g.drawRoundedRectangle (bez, 12.0f, 1.0f);
+        g.drawRoundedRectangle (bez, 8.0f, 1.0f);
     }
-    auto window = lcdArea.toFloat().expanded (7.0f);
-    chamfer (g, window, 7.0f, true);
+    chamfer (g, lcdArea.toFloat().expanded (6.0f), 6.0f, true);
 
-    // backlight behind the glass
+    // backlight, title bar, status rule and soft-key row
     auto lcdR = lcdArea.toFloat();
     g.setGradientFill (juce::ColourGradient (lcd::backlight.brighter (0.08f), lcdR.getCentreX(), lcdR.getCentreY() - lcdR.getHeight() * 0.15f,
                                              lcd::backlightLo.darker (0.05f), lcdR.getX(), lcdR.getBottom(), true));
     g.fillRect (lcdR);
-    auto inner = lcdArea.reduced (6);
-    g.setColour (lcd::ink);
-    g.fillRect (inner.removeFromTop (22));
-    auto status = inner.removeFromBottom (30);
-    g.fillRect (status.getX(), status.getY(), status.getWidth(), 2);
-    drawSilk (g, "BACKLIT DOT MATRIX LCD", screenArea.withTrimmedTop (screenArea.getHeight() - 15).withTrimmedRight (22),
-              juce::Justification::centredRight, 9.5f, true);
-
-    // ---- brand plate
     {
-        auto b = brandArea.reduced (4, 0);
-        auto name = b.removeFromLeft ((int) (b.getWidth() * 0.55f));
-        const float h = 40.0f;
-        juce::GlyphArrangement ga;
-        ga.addLineOfText (labelFont (h), "PADLAB", (float) name.getX(), (float) name.getCentreY() + h * 0.32f);
-        juce::Path wordmark;
-        ga.createPath (wordmark);
-        wordmark.applyTransform (juce::AffineTransform::shear (-0.18f, 0.0f).translated (name.getCentreY() * 0.18f, 0.0f));
-        // screen-printed ink sits on the paint: tiny highlight below it from the paint's edge
-        g.setColour (juce::Colours::white.withAlpha (0.25f));
-        g.fillPath (wordmark, juce::AffineTransform::translation (0.0f, 1.0f));
-        g.setColour (colours::silk);
-        g.fillPath (wordmark);
-
-        auto badge = juce::Rectangle<float> (wordmark.getBounds().getRight() + 12.0f, name.getCentreY() - 11.0f, 60.0f, 22.0f);
-        juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 4, { 0, 2 }).drawForRectangle (g, badge.toNearestInt());
-        const int bw = (int) std::ceil (badge.getWidth() * sc), bh = (int) std::ceil (badge.getHeight() * sc);
-        materials::drawAt (g, materials::cached ("badge:" + juce::String (bw), [=] {
-                               return materials::pillow (bw, bh, 3.0f * sc, 3.0f * sc, 0.5f * sc, juce::Colour (0xff1e1e1d), materials::metal(), 31);
-                           }), badge);
-        drawSilk (g, "PL-96", badge.toNearestInt(), juce::Justification::centred, 13.0f, true);
-        drawSilk (g, "SAMPLING GROOVE\nWORKSTATION", b.reduced (0, 4), juce::Justification::centredRight, 12.0f);
+        auto inner = lcdArea.reduced (6);
+        g.setColour (lcd::ink);
+        g.fillRect (inner.removeFromTop (22));
+        g.fillRect (statusArea.getX(), statusArea.getY(), statusArea.getWidth(), 2);
+        g.fillRect (tabArea.getX(), tabArea.getY(), tabArea.getWidth(), 1);
     }
 
-    // ---- silkscreen section headers
-    sectionHeader (g, "Q-LINK  /  SELECTED PAD", qlinkArea);
-    sectionHeader (g, "PAD PERFORMANCE", padModeArea);
-    sectionHeader (g, "PAD BANK", bankArea);
-    sectionHeader (g, "MODE", modeArea.withRight (mixerBtn.getRight()));
-    sectionHeader (g, "DATA", wheelArea);
-    sectionHeader (g, "DISK", fileArea);
+    // ---- lower block print
+    groupBox (g, nvArea, "NOTE VARIATION");
+    sectionHeader (g, "DATA", wheelArea.withTrimmedTop (46 + 2).withHeight (14));
+    sectionHeader (g, "CURSOR", cursorArea.withHeight (14));
+    sectionHeader (g, "LOCATE", locateArea);
     sectionHeader (g, "TRANSPORT", transportArea);
+
+    // ---- top right: vents and the model badge
+    drawVentGrille (g, ventArea.toFloat(), 4, 6);
+    {
+        auto b = badgeArea.reduced (0, 4);
+        auto model = b.removeFromTop (34);
+        g.setFont (labelFont (36.0f));
+        const juce::String name ("PL-96");
+        const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), name);
+        auto nameR = model.removeFromRight ((int) tw + 4);
+        g.setColour (juce::Colours::white.withAlpha (0.3f));
+        g.drawText (name, nameR.translated (0, 1), juce::Justification::centredRight);
+        g.setColour (colours::silk.withAlpha (0.85f));
+        g.drawText (name, nameR, juce::Justification::centredRight);
+        // two printed stripes under the model name
+        auto stripe = b.removeFromTop (6).withLeft (nameR.getX() - 60);
+        g.setColour (colours::keyRed);
+        g.fillRect (stripe.removeFromTop (2));
+        stripe.removeFromTop (1);
+        g.setColour (colours::keyBlue.darker (0.3f));
+        g.fillRect (stripe.removeFromTop (2));
+        drawSilk (g, "SAMPLING GROOVE WORKSTATION", b.withTrimmedTop (2).withHeight (14), juce::Justification::centredRight, 11.0f);
+    }
+    sectionHeader (g, "Q-LINK  /  SELECTED PAD", qlinkArea);
+
+    // ---- pad plate: a flat blue-grey plate set into the panel, with a darker column for the bank keys
+    {
+        auto plate = plateArea.toFloat();
+        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.drawRoundedRectangle (plate.translated (0, 1.2f).expanded (0.6f), 4.0f, 1.2f);
+        g.setFillType (tileFill (colours::deck, 11));
+        g.fillRoundedRectangle (plate, 4.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.18f), 0, plate.getY(),
+                                                 juce::Colours::transparentBlack, 0, plate.getY() + 12.0f, false));
+        g.fillRect (plate.withHeight (12.0f));
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawRoundedRectangle (plate, 4.0f, 1.0f);
+
+        auto strip = stripArea.toFloat();
+        g.setColour (colours::deck.darker (0.18f));
+        g.fillRoundedRectangle (strip, 3.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.25f));
+        g.drawRoundedRectangle (strip, 3.0f, 1.0f);
+
+        auto head = plateArea.reduced (10, 8).removeFromTop (16).withTrimmedLeft (stripArea.getWidth() + 6);
+        sectionHeader (g, "DRUMS", head);
+    }
 }
 
 // ---------------------------------------------------------------- screens / state
@@ -546,12 +788,13 @@ void MainComponent::showScreen (ScreenMode m)
     for (size_t i = 0; i < screens.size(); ++i)
         screens[i]->setVisible ((int) i == (int) m);
     modeTitle.setText (screens[(size_t) m]->getTitle(), juce::dontSendNotification);
-    mainBtn.setLit (m == ScreenMode::Main);
-    progBtn.setLit (m == ScreenMode::Program);
-    sampleBtn.setLit (m == ScreenMode::SampleEdit);
-    samplerBtn.setLit (m == ScreenMode::Sampler);
-    mixerBtn.setLit (m == ScreenMode::Mixer);
-    grabKeyboardFocus();
+    int tab = -1;
+    for (int i = 0; i < 6; ++i)
+        if (kSoftKeyScreens[i] == m)
+            tab = i;
+    softTabs.setActive (tab);
+    if (isShowing())
+        grabKeyboardFocus();
 }
 
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -564,6 +807,8 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void MainComponent::flash (const juce::String& message)
 {
+    if (entry != Entry::None)
+        return; // keypad entry owns the message line until ENTER
     messageLabel.setText (message, juce::dontSendNotification);
     messageUntil = juce::Time::getMillisecondCounter() + 2500;
 }
@@ -573,6 +818,7 @@ void MainComponent::setBank (int b)
     engine.setCurrentBank (b);
     ctx.setSelectedPad (b * kPadsPerBank + ctx.selectedPad % kPadsPerBank);
     ctx.changed();
+    flash ("PAD BANK " + juce::String::charToString ((juce::juce_wchar) ('A' + b)));
 }
 
 void MainComponent::timerCallback()
@@ -583,12 +829,25 @@ void MainComponent::timerCallback()
 
     fullLevel.setLit (s.fullLevel);
     sixteenLevels.setLit (s.sixteenLevels);
-    noteRepeat.setLit (s.noteRepeat);
-    erase.setLit (s.eraseHeld);
-    for (int i = 0; i < kNumBanks; ++i)
-        banks[(size_t) i]->setLit (engine.getCurrentBank() == i);
+    tapBtn.setLit (s.noteRepeat);
+    eraseBtn.setLit (s.eraseHeld);
+    afterBtn.setLit (s.noteVariationOn);
+    keypad[9]->setLit (shiftActive());
+    bankLeds.setBank (engine.getCurrentBank());
+    if (tapPressedAt != 0)
+    {
+        // a pad hit while TAP is held means it's being used as NOTE REPEAT, not tapped
+        static uint32_t lastHits = 0;
+        uint32_t hits = 0;
+        for (int i = 0; i < kNumPads; ++i)
+            hits += engine.getPadHitCount (i);
+        if (lastHits != 0 && hits != lastHits)
+            padHitWhileTapHeld = true;
+        lastHits = hits;
+    }
 
     playBtn.setLit (state != Transport::State::Stopped);
+    playStartBtn.setLit (state != Transport::State::Stopped && engine.isPlayingSong());
     recBtn.setLit (rec == RecordMode::Record);
     overdubBtn.setLit (rec == RecordMode::Overdub);
     const bool armedOnly = rec != RecordMode::None && state != Transport::State::Playing;
@@ -601,13 +860,12 @@ void MainComponent::timerCallback()
     }
 
     // position: BAR.BEAT.TICK
-    int seqBars = 2, bpb = 4;
+    int bpb = 4;
     double bpm = 90.0;
     juce::String projName, seqName;
     const int seqIdx = engine.getCurrentSequence();
     engine.withProject ([&] (Project& p) {
         const auto& seq = p.sequences[(size_t) seqIdx];
-        seqBars = seq.bars;
         bpb = seq.beatsPerBar;
         bpm = seq.bpm;
         projName = p.name;
@@ -623,16 +881,15 @@ void MainComponent::timerCallback()
         pos = juce::String (bar).paddedLeft ('0', 3) + "." + juce::String (beat).paddedLeft ('0', 2) + "."
               + juce::String (tick).paddedLeft ('0', 3);
     }
-    positionLabel.setText (pos, juce::dontSendNotification);
-    const bool recording = engine.getRecordMode() != RecordMode::None && state != Transport::State::Stopped;
-    positionLabel.setText ((recording ? "REC " : "") + positionLabel.getText(), juce::dontSendNotification);
+    const bool recording = rec != RecordMode::None && state != Transport::State::Stopped;
+    positionLabel.setText ((recording ? "REC " : engine.isPlayingSong() ? "SONG " : "") + pos, juce::dontSendNotification);
 
     const int queued = engine.getQueuedSequence();
     if (++statusTick % 6 == 0)
-    statusLabel.setText ((queued >= 0 ? "NEXT SEQ " + juce::String (queued + 1) + "   " : juce::String())
-                             + juce::String (bpm, 1) + " BPM   TRK " + juce::String (s.currentTrack + 1) + "   VOICES "
-                             + juce::String (engine.getActiveVoices()) + "   CPU " + juce::String ((int) (engine.getCpuLoad() * 100)) + "%",
-                         juce::dontSendNotification);
+        statusLabel.setText ((queued >= 0 ? "NEXT SEQ " + juce::String (queued + 1) + "   " : juce::String())
+                                 + juce::String (bpm, 1) + " BPM   TRK " + juce::String (s.currentTrack + 1) + "   VOICES "
+                                 + juce::String (engine.getActiveVoices()) + "   CPU " + juce::String ((int) (engine.getCpuLoad() * 100)) + "%",
+                             juce::dontSendNotification);
     projectTitle.setText (projName + (ctx.projectFolder.exists() ? juce::String() : juce::String (" *")) + "  |  SEQ "
                               + juce::String (seqIdx + 1).paddedLeft ('0', 2) + " " + seqName,
                           juce::dontSendNotification);
@@ -643,23 +900,24 @@ void MainComponent::timerCallback()
         messageUntil = 0;
     }
 
-    auto& active = screens[(size_t) ctx.screen];
-    if (active->isVisible())
-        active->refresh();
+    auto& active = activeScreen();
+    if (active.isVisible())
+        active.refresh();
 
     Screen::LiveOverlay live;
-    if (active->isVisible())
+    if (active.isVisible())
     {
-        active->getLiveOverlay (engine.getPositionTicks(), state == Transport::State::Playing, live);
-        const auto offset = active->getPosition() - playhead.getPosition();
-        live.playhead = live.playhead.isEmpty() ? live.playhead : live.playhead + offset;
+        active.getLiveOverlay (engine.getPositionTicks(), state == Transport::State::Playing, live);
+        // screen coordinates -> overlay coordinates (the screen may be scaled)
+        if (! live.playhead.isEmpty())
+            live.playhead = playhead.getLocalArea (&active, live.playhead);
         for (auto& m : live.meters)
-            m.area = m.area + offset;
+            m.area = playhead.getLocalArea (&active, m.area);
     }
     playhead.update (std::move (live));
 
     juce::Rectangle<int> cursor;
-    if (auto* t = dataTarget.getComponent(); t != nullptr && t->isShowing() && active->isParentOf (t))
+    if (auto* t = dataTarget.getComponent(); t != nullptr && t->isShowing() && active.isParentOf (t))
         cursor = playhead.getLocalArea (t, t->getLocalBounds());
     playhead.setCursor (cursor);
 }
@@ -749,20 +1007,88 @@ void MainComponent::qlinkChanged (int knob)
         screens[(size_t) ScreenMode::Program]->contextChanged();
 }
 
-// ---------------------------------------------------------------- DATA wheel
+
+// ---------------------------------------------------------------- DATA wheel, CURSOR, keypad
+
+bool MainComponent::shiftActive() const
+{
+    return shiftLatched || juce::ModifierKeys::currentModifiers.isShiftDown();
+}
 
 void MainComponent::noteTouched (juce::Component* c)
 {
     for (; c != nullptr && c != this; c = c->getParentComponent())
     {
-        if (c == &dataWheel)
+        if (c == &dataWheel || c == &cursorPad)
             return;
-        if (dynamic_cast<juce::Slider*> (c) != nullptr || dynamic_cast<juce::ComboBox*> (c) != nullptr)
+        for (auto& k : keypad)
+            if (c == k.get())
+                return;
+        if (dynamic_cast<juce::Slider*> (c) != nullptr || dynamic_cast<juce::ComboBox*> (c) != nullptr
+            || dynamic_cast<juce::ToggleButton*> (c) != nullptr)
         {
+            if (c != dataTarget.getComponent())
+                cancelEntry();
             dataTarget = c;
             return;
         }
     }
+}
+
+void MainComponent::moveCursor (int dx, int dy)
+{
+    // gather the editable fields of the current screen
+    std::vector<juce::Component*> fields;
+    std::function<void (juce::Component&)> collect = [&] (juce::Component& parent) {
+        for (auto* c : parent.getChildren())
+        {
+            if (! c->isVisible())
+                continue;
+            if (c->isEnabled()
+                && (dynamic_cast<juce::Slider*> (c) != nullptr || dynamic_cast<juce::ComboBox*> (c) != nullptr
+                    || dynamic_cast<juce::ToggleButton*> (c) != nullptr))
+                fields.push_back (c);
+            else
+                collect (*c);
+        }
+    };
+    collect (activeScreen());
+    if (fields.empty())
+        return;
+    cancelEntry();
+    auto centre = [this] (juce::Component* c) { return getLocalArea (c, c->getLocalBounds()).getCentre().toFloat(); };
+
+    auto* current = dataTarget.getComponent();
+    if (current == nullptr || std::find (fields.begin(), fields.end(), current) == fields.end())
+    {
+        // no field yet: start at the top-left one
+        dataTarget = *std::min_element (fields.begin(), fields.end(), [&] (auto* a, auto* b) {
+            const auto pa = centre (a), pb = centre (b);
+            return pa.y + pa.x * 0.25f < pb.y + pb.x * 0.25f;
+        });
+        return;
+    }
+    const auto from = centre (current);
+    juce::Component* best = nullptr;
+    float bestScore = 1.0e9f;
+    for (auto* f : fields)
+    {
+        if (f == current)
+            continue;
+        const auto d = centre (f) - from;
+        const float along = d.x * (float) dx + d.y * (float) dy;
+        if (along <= 4.0f)
+            continue;
+        const float across = std::abs (d.x * (float) dy) + std::abs (d.y * (float) dx);
+        const float score = along + across * 2.5f;
+        if (score < bestScore)
+        {
+            bestScore = score;
+            best = f;
+        }
+    }
+    if (best != nullptr)
+        dataTarget = best;
 }
 
 void MainComponent::dataStep (int steps)
@@ -770,9 +1096,10 @@ void MainComponent::dataStep (int steps)
     auto* target = dataTarget.getComponent();
     if (target == nullptr || ! target->isShowing())
     {
-        flash ("Click a value, then turn DATA");
+        flash ("Move the CURSOR to a field (or click one), then turn DATA");
         return;
     }
+    cancelEntry();
 
     if (auto* s = dynamic_cast<juce::Slider*> (target))
     {
@@ -791,7 +1118,6 @@ void MainComponent::dataStep (int steps)
         }
         else
         {
-            // continuous or skewed: move through the knob's travel instead
             v = s->proportionOfLengthToValue (juce::jlimit (0.0, 1.0, s->valueToProportionOfLength (v) + steps / 200.0));
         }
         s->setValue (range.clipValue (v), juce::sendNotificationSync);
@@ -817,6 +1143,188 @@ void MainComponent::dataStep (int steps)
             flash (cb->getItemText (idx));
         }
     }
+    else if (auto* tb = dynamic_cast<juce::ToggleButton*> (target))
+    {
+        if ((steps > 0) != tb->getToggleState())
+            tb->triggerClick();
+        flash (tb->getButtonText() + (steps > 0 ? ": ON" : ": OFF"));
+    }
+}
+
+void MainComponent::cancelEntry()
+{
+    if (entry == Entry::None)
+        return;
+    entry = Entry::None;
+    entryDigits.clear();
+    messageLabel.setText ({}, juce::dontSendNotification);
+}
+
+void MainComponent::keypadPressed (int key)
+{
+    if (key == 10) // SHIFT latches for the next key
+    {
+        shiftLatched = ! shiftLatched;
+        return;
+    }
+    if (key == 11) // ENTER
+        return commitEntry();
+
+    auto showEntry = [this] {
+        messageUntil = 0;
+        messageLabel.setText ((entry == Entry::GoTo ? "GO TO BAR: " : "ENTER VALUE: ") + entryDigits + "_",
+                              juce::dontSendNotification);
+    };
+
+    // SHIFT + key (or a key with no field to type into) opens the mode printed under it
+    auto* target = dataTarget.getComponent();
+    const bool numericTarget = target != nullptr && target->isShowing()
+                               && (dynamic_cast<juce::Slider*> (target) != nullptr || dynamic_cast<juce::ComboBox*> (target) != nullptr);
+    if (shiftActive() || (entry != Entry::GoTo && ! numericTarget))
+    {
+        shiftLatched = false;
+        cancelEntry();
+        switch (key)
+        {
+            case 0: showScreen (ScreenMode::Main); break;
+            case 1: showScreen (ScreenMode::Song); break;
+            case 2: showScreen (ScreenMode::StepEdit); break;
+            case 3: showDiskMenu(); break;
+            case 4: showScreen (ScreenMode::Sampler); break;
+            case 5: showScreen (ScreenMode::SampleEdit); break;
+            case 6: showScreen (ScreenMode::Program); break;
+            case 7: showScreen (ScreenMode::Mixer); break;
+            case 8: showScreen (ScreenMode::Other); break;
+            case 9: showAudioSettings(); break;
+            default: break;
+        }
+        return;
+    }
+
+    if (entry == Entry::None)
+        entry = Entry::Value;
+    if (entryDigits.length() < 6)
+        entryDigits << key;
+    showEntry();
+}
+
+void MainComponent::commitEntry()
+{
+    if (entry == Entry::None || entryDigits.isEmpty())
+        return cancelEntry();
+    const int n = entryDigits.getIntValue();
+    const auto mode = entry;
+    entry = Entry::None;
+    entryDigits.clear();
+
+    if (mode == Entry::GoTo)
+    {
+        int64_t len = 0, barTicks = 4 * kPPQN;
+        engine.withProject ([&] (Project& p) {
+            const auto& seq = p.sequences[(size_t) engine.getCurrentSequence()];
+            len = seq.getLengthTicks();
+            barTicks = (int64_t) seq.beatsPerBar * kPPQN;
+        });
+        const int64_t target = juce::jlimit<int64_t> (0, juce::jmax<int64_t> (0, len - barTicks), (int64_t) (juce::jmax (1, n) - 1) * barTicks);
+        engine.locate (target);
+        flash ("GO TO BAR " + juce::String (target / barTicks + 1));
+        return;
+    }
+
+    auto* target = dataTarget.getComponent();
+    if (auto* s = dynamic_cast<juce::Slider*> (target))
+    {
+        s->setValue (s->getRange().clipValue (n), juce::sendNotificationSync);
+        flash (s->getTextFromValue (s->getValue()));
+    }
+    else if (auto* cb = dynamic_cast<juce::ComboBox*> (target))
+    {
+        // pick the item numbered n ("05 Verse", "16"...), else the n-th item
+        int pick = -1;
+        for (int i = 0; i < cb->getNumItems() && pick < 0; ++i)
+        {
+            const auto lead = cb->getItemText (i).trimStart().initialSectionContainingOnly ("0123456789");
+            if (lead.isNotEmpty() && lead.getIntValue() == n)
+                pick = i;
+        }
+        if (pick < 0 && n >= 1 && n <= cb->getNumItems())
+            pick = n - 1;
+        if (pick >= 0)
+        {
+            cb->setSelectedItemIndex (pick, juce::sendNotificationSync);
+            flash (cb->getItemText (pick));
+        }
+        else
+            flash ("No item " + juce::String (n));
+    }
+    else
+        messageLabel.setText ({}, juce::dontSendNotification);
+}
+
+void MainComponent::locateStep (int dir)
+{
+    cancelEntry();
+    if (ctx.screen == ScreenMode::StepEdit)
+        return stepEditStep (activeScreen(), dir);
+    const auto s = engine.getSettings();
+    const auto& div = timing::divisions()[(size_t) s.timingCorrect];
+    const int64_t step = div.ticks > 1 ? div.ticks : kPPQN / 4;
+    int64_t len = 0;
+    engine.withProject ([&] (Project& p) { len = p.sequences[(size_t) engine.getCurrentSequence()].getLengthTicks(); });
+    const auto pos = (int64_t) std::llround (engine.getPositionTicks());
+    const int64_t target = dir > 0 ? (pos / step + 1) * step : (pos > 0 ? ((pos - 1) / step) * step : 0);
+    engine.locate (juce::jlimit<int64_t> (0, juce::jmax<int64_t> (0, len - 1), target));
+}
+
+void MainComponent::locateBar (int dir)
+{
+    cancelEntry();
+    int64_t len = 0, barTicks = 4 * kPPQN;
+    engine.withProject ([&] (Project& p) {
+        const auto& seq = p.sequences[(size_t) engine.getCurrentSequence()];
+        len = seq.getLengthTicks();
+        barTicks = (int64_t) seq.beatsPerBar * kPPQN;
+    });
+    const auto pos = (int64_t) std::llround (engine.getPositionTicks());
+    int64_t target = dir > 0 ? (pos / barTicks + 1) * barTicks : (pos > 0 ? ((pos - 1) / barTicks) * barTicks : 0);
+    if (target >= len)
+        target = juce::jmax<int64_t> (0, len - barTicks);
+    engine.locate (target);
+}
+
+void MainComponent::openWindow()
+{
+    // OPEN WINDOW: the full editor for the field under the cursor
+    auto* target = dataTarget.getComponent();
+    if (auto* cb = dynamic_cast<juce::ComboBox*> (target); cb != nullptr && cb->isShowing())
+        return cb->showPopup();
+    if (auto* s = dynamic_cast<juce::Slider*> (target); s != nullptr && s->isShowing())
+        return s->showTextBox();
+    flash ("OPEN WINDOW: move the CURSOR to a field first");
+}
+
+void MainComponent::showDiskMenu()
+{
+    juce::PopupMenu m;
+    m.setLookAndFeel (&lcdLnf);
+    m.addSectionHeader ("DISK");
+    m.addItem (1, "New project");
+    m.addItem (2, "Load project...");
+    m.addItem (3, "Save project", true);
+    m.addItem (4, "Save project as...");
+    m.addSeparator();
+    m.addItem (5, "Audio / MIDI setup...");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&floppy), [this] (int r) {
+        switch (r)
+        {
+            case 1: newProject(); break;
+            case 2: openProject(); break;
+            case 3: saveProject (false); break;
+            case 4: saveProject (true); break;
+            case 5: showAudioSettings(); break;
+            default: break;
+        }
+    });
 }
 
 // ---------------------------------------------------------------- keyboard
@@ -838,6 +1346,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& k)
     if (dynamic_cast<juce::TextEditor*> (getCurrentlyFocusedComponent()) != nullptr)
         return false;
 
+    const int code = k.getKeyCode();
     if (k == juce::KeyPress::spaceKey)
     {
         if (engine.getTransportState() == Transport::State::Stopped)
@@ -846,26 +1355,42 @@ bool MainComponent::keyPressed (const juce::KeyPress& k)
             engine.stop();
         return true;
     }
-    if (k == juce::KeyPress::returnKey) { engine.play (true); return true; }
-    if (k.getKeyCode() == juce::KeyPress::upKey || k.getKeyCode() == juce::KeyPress::downKey)
+    if (k == juce::KeyPress::returnKey)
     {
-        const int dir = k.getKeyCode() == juce::KeyPress::upKey ? 1 : -1;
-        dataWheel.nudge (dir * (mods.isShiftDown() ? 10 : 1));
+        if (entry != Entry::None)
+            commitEntry();
+        else
+            engine.play (true);
         return true;
     }
-    if (k == juce::KeyPress::F1Key) { showScreen (ScreenMode::Main); return true; }
-    if (k == juce::KeyPress::F2Key) { showScreen (ScreenMode::Program); return true; }
-    if (k == juce::KeyPress::F3Key) { showScreen (ScreenMode::SampleEdit); return true; }
-    if (k == juce::KeyPress::F4Key) { showScreen (ScreenMode::Sampler); return true; }
-    if (k == juce::KeyPress::F5Key) { showScreen (ScreenMode::Mixer); return true; }
+    if (k == juce::KeyPress::escapeKey) { cancelEntry(); return true; }
+    if (code == juce::KeyPress::upKey) { moveCursor (0, -1); return true; }
+    if (code == juce::KeyPress::downKey) { moveCursor (0, 1); return true; }
+    if (code == juce::KeyPress::leftKey) { moveCursor (-1, 0); return true; }
+    if (code == juce::KeyPress::rightKey) { moveCursor (1, 0); return true; }
+    const int fkeys[] = { juce::KeyPress::F1Key, juce::KeyPress::F2Key, juce::KeyPress::F3Key,
+                          juce::KeyPress::F4Key, juce::KeyPress::F5Key, juce::KeyPress::F6Key };
+    for (int i = 0; i < 6; ++i)
+        if (code == fkeys[i]) { softKeys[(size_t) i]->triggerClick(); return true; }
+    // the numeric keypad of a full-size keyboard works like the panel keypad
+    for (int d = 0; d <= 9; ++d)
+        if (code == juce::KeyPress::numberPad0 + d) { keypadPressed (d); return true; }
 
     const auto ch = juce::CharacterFunctions::toLowerCase (k.getTextCharacter());
+    if (ch == '-' || ch == '_') { dataWheel.nudge (mods.isShiftDown() ? -10 : -1); return true; }
+    if (ch == '=' || ch == '+') { dataWheel.nudge (mods.isShiftDown() ? 10 : 1); return true; }
     if (ch == '[') { setBank (juce::jmax (0, engine.getCurrentBank() - 1)); return true; }
     if (ch == ']') { setBank (juce::jmin (kNumBanks - 1, engine.getCurrentBank() + 1)); return true; }
     if (ch == '.') { recordPressed (RecordMode::Overdub); return true; }
     if (ch == ',') { recordPressed (RecordMode::Record); return true; }
-    if (ch == 'n') { noteRepeat.triggerClick(); return true; }
+    if (ch == 'n')
+    {
+        engine.updateSettings ([] (PerformanceSettings& s) { s.noteRepeat = ! s.noteRepeat; });
+        flash (engine.getSettings().noteRepeat ? "NOTE REPEAT latched" : "NOTE REPEAT off");
+        return true;
+    }
     if (ch == 'l') { fullLevel.triggerClick(); return true; }
+    if (ch == 'g') { gotoBtn.triggerClick(); return true; }
 
     for (auto key : kPadKeys)
         if (ch == (juce::juce_wchar) key)

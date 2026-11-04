@@ -6,7 +6,8 @@
 namespace padlab
 {
 enum class PadView { Play, TrackMute, PadMute };
-enum class ScreenMode { Main, Program, SampleEdit, Sampler, Mixer };
+enum class ScreenMode { Main, Program, SampleEdit, Sampler, Mixer, Song, StepEdit, Other };
+constexpr int kNumScreens = 8;
 
 /** UI-wide state shared by all screens. Listeners get a change message whenever it changes. */
 struct AppContext : juce::ChangeBroadcaster
@@ -20,6 +21,8 @@ struct AppContext : juce::ChangeBroadcaster
     juce::File projectFolder;
     std::function<void (ScreenMode)> showScreen;
     std::function<void (const juce::String&)> flashMessage;
+    /** Set by a screen that wants to know about pad hits (STEP EDIT inserts notes). */
+    std::function<void (int pad, int velocity)> onPadHit;
 
     int currentTrack() const { return engine.getSettings().currentTrack; }
     int currentProgram()

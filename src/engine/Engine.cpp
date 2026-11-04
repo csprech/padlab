@@ -152,7 +152,7 @@ void Engine::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessag
         for (int i = 0; i < kPadsPerBank; ++i)
             pushPad ({ LiveInput::Pressure, currentBank.load() * kPadsPerBank + i, m.getChannelPressureValue(), 0 }, true);
     }
-    else if (m.isController() && m.getControllerNumber() >= 70 && m.getControllerNumber() <= 73)
+    else if (m.isController() && m.getControllerNumber() >= 70 && m.getControllerNumber() <= 74)
     {
         const int knob = m.getControllerNumber() - 70, value = m.getControllerValue();
         juce::MessageManager::callAsync ([this, knob, value] {
