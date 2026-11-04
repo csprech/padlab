@@ -25,7 +25,14 @@ struct ProjectIOTests : juce::UnitTest
         e.velocity = 66;
         e.length = 99;
         e.tune = 2.0f;
+        e.variation = { VariationType::Attack, 99 };
         p.sequences[3].tracks[2].insertSorted (e);
+        p.vintageMode = 1;
+        p.songs[2].name = "Verse/Chorus";
+        p.songs[2].insertStep (0, { 3, 4 });
+        p.songs[2].insertStep (1, { 5, 2 });
+        p.songs[2].loop = true;
+        p.songs[2].loopToStep = 1;
 
         auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
                        .getChildFile ("padlab-test-" + juce::String (juce::Random::getSystemRandom().nextInt()))
@@ -58,7 +65,16 @@ struct ProjectIOTests : juce::UnitTest
             expectEquals ((int) ev[0].velocity, 66);
             expectEquals ((int) ev[0].length, 99);
             expectEquals (ev[0].tune, 2.0f);
+            expect (ev[0].variation == NoteVariation { VariationType::Attack, 99 });
         }
+        expectEquals (q.vintageMode, 1);
+        expectEquals (q.songs[2].name, juce::String ("Verse/Chorus"));
+        expectEquals (q.songs[2].numSteps, 2);
+        expectEquals (q.songs[2].steps[1].sequence, 5);
+        expectEquals (q.songs[2].steps[0].repeats, 4);
+        expect (q.songs[2].loop);
+        expectEquals (q.songs[2].loopToStep, 1);
+        expectEquals (q.songs[0].numSteps, 0);
         const auto& a = p.programs[0].pads[0].layers[0].sample->buffer;
         const auto& b = q.programs[0].pads[0].layers[0].sample->buffer;
         expectEquals (b.getNumSamples(), a.getNumSamples());

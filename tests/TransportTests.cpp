@@ -356,6 +356,115 @@ struct TransportTests : juce::UnitTest
             expectEquals ((int) h.events().size(), 1);
             expectEquals ((int) h.triggersOf (1).size(), 0);
         }
+        {
+            beginTest ("song mode plays each step's sequence its number of repeats, then stops");
+            Harness h;
+            for (int i : { 0, 1 })
+            {
+                h.project.sequences[(size_t) i].bars = 1;
+                h.project.sequences[(size_t) i].bpm = 120.0;
+                NoteEvent e;
+                e.pad = (int16_t) (20 + i);
+                h.project.sequences[(size_t) i].tracks[0].insertSorted (e);
+            }
+            auto& song = h.project.songs[0];
+            song.insertStep (0, { 0, 2 });  // A x2
+            song.insertStep (1, { 1, 1 });  // B x1
+            h.transport.playSong (h.project, 0, 0);
+            expect (h.transport.isPlayingSong());
+            h.run (barSamples * 4);
+            const auto a = h.triggersOf (20), b = h.triggersOf (21);
+            expectEquals ((int) a.size(), 2, "sequence A twice");
+            expectEquals ((int) b.size(), 1, "then B once");
+            if (a.size() == 2 && b.size() == 1)
+            {
+                expect (near (a[0], 0) && near (a[1], barSamples));
+                expect (near (b[0], 2 * barSamples));
+            }
+            expect (h.transport.getState() == Transport::State::Stopped, "stops at the end of the song");
+            expect (! h.transport.isPlayingSong());
+        }
+        {
+            beginTest ("song loop jumps back to the loop step");
+            Harness h;
+            for (int i : { 0, 1 })
+            {
+                h.project.sequences[(size_t) i].bars = 1;
+                h.project.sequences[(size_t) i].bpm = 120.0;
+                NoteEvent e;
+                e.pad = (int16_t) (20 + i);
+                h.project.sequences[(size_t) i].tracks[0].insertSorted (e);
+            }
+            auto& song = h.project.songs[0];
+            song.insertStep (0, { 0, 1 });
+            song.insertStep (1, { 1, 1 });
+            song.loop = true;
+            song.loopToStep = 1;
+            h.transport.playSong (h.project, 0, 0);
+            h.run (barSamples * 4 + 10);
+            expectEquals ((int) h.triggersOf (20).size(), 1, "intro once");
+            expectEquals ((int) h.triggersOf (21).size(), 4, "then the loop step forever");
+            expect (h.transport.isPlayingSong());
+        }
+        {
+            beginTest ("note variation: the slider's value goes out with the hit and is recorded");
+            Harness h;
+            h.settings.noteVariationOn = true;
+            h.settings.noteVariationType = VariationType::Decay;
+            h.settings.noteVariationValue = 20;
+            h.settings.noteVariationPad = 4;
+            h.settings.timingCorrect = 7; // off
+            h.transport.armRecord (RecordMode::Overdub);
+            h.transport.play (true, false);
+            h.input (100, LiveInput::PadDown, 4);
+            h.input (200, LiveInput::PadDown, 5); // not the target pad: unchanged
+            h.run (1000);
+            int checked = 0;
+            for (auto& hit : h.hits)
+                if (hit.action.type == Action::Trigger)
+                {
+                    if (hit.action.pad == 4)
+                        expect (hit.action.variation == NoteVariation { VariationType::Decay, 20 });
+                    else
+                        expect (hit.action.variation.type == VariationType::None);
+                    ++checked;
+                }
+            expectEquals (checked, 2);
+            bool recorded = false;
+            for (auto& e : h.events())
+                if (e.pad == 4)
+                    recorded = e.variation == NoteVariation { VariationType::Decay, 20 };
+            expect (recorded, "variation stored on the recorded note");
+
+            // tune variation rides in the tune field: 127 -> about +12 semitones
+            Harness t;
+            t.settings.noteVariationOn = true;
+            t.settings.noteVariationType = VariationType::Tune;
+            t.settings.noteVariationValue = 0;
+            t.input (0, LiveInput::PadDown, 1);
+            t.run (100);
+            expect (! t.hits.empty() && std::abs (t.hits[0].action.tune + 12.0f) < 0.01f);
+        }
+        {
+            beginTest ("16 levels can spread decay / attack / filter across the pads");
+            Harness h;
+            h.settings.sixteenLevels = true;
+            h.settings.sixteenLevelsSource = 2;
+            h.settings.sixteenLevelsParam = 4; // filter
+            h.input (0, LiveInput::PadDown, 0);
+            h.input (10, LiveInput::PadDown, 15);
+            h.run (100);
+            std::vector<NoteVariation> vars;
+            for (auto& hit : h.hits)
+                if (hit.action.type == Action::Trigger)
+                    vars.push_back (hit.action.variation);
+            expectEquals ((int) vars.size(), 2);
+            if (vars.size() == 2)
+            {
+                expect (vars[0] == NoteVariation { VariationType::Filter, 0 });
+                expect (vars[1] == NoteVariation { VariationType::Filter, 127 });
+            }
+        }
     }
 };
 

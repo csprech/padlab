@@ -29,6 +29,7 @@ struct Action
     int velocity = 100;
     float tune = 0.0f;
     int releaseAfter = -1; // samples; -1 = hold until a Release action (live pads)
+    NoteVariation variation;
     bool accent = false;   // Click: downbeat
 };
 
@@ -51,7 +52,7 @@ struct PerformanceSettings
     bool fullLevel = false;
     bool sixteenLevels = false;
     int sixteenLevelsSource = 0;      // absolute pad
-    int sixteenLevelsParam = 0;       // 0 = velocity, 1 = tune
+    int sixteenLevelsParam = 0;       // 0 = velocity, 1 = tune, 2 = decay, 3 = attack, 4 = filter
     bool noteRepeat = false;
     int repeatDivision = 3;           // index into timing::divisions()
     int timingCorrect = 3;            // index into timing::divisions()
@@ -63,6 +64,17 @@ struct PerformanceSettings
     bool metronomeOnlyWhenRecording = false;
     bool countIn = true;
     bool autoOverdub = true;          // REC switches to overdub after one full pass
+
+    // Note Variation slider: varies one parameter of the target pad's notes as they're played
+    bool noteVariationOn = false;
+    VariationType noteVariationType = VariationType::Tune;
+    int noteVariationValue = 64;      // 0..127, 64 = centre
+    int noteVariationPad = -1;        // absolute pad, -1 = every pad
+
+    // Song mode: PLAY plays the current song (set while the Song screen is showing)
+    bool songMode = false;
+    int currentSong = 0;
+    int songStartStep = 0;            // PLAY starts here; PLAY START from step 1
 };
 
 class Transport
@@ -74,6 +86,8 @@ public:
 
     // ---- commands (audio thread)
     void play (bool fromStart, bool countIn);
+    /** Starts the song from a step (Song mode). */
+    void playSong (const Project& project, int song, int fromStep);
     void stop();
     void armRecord (RecordMode mode); // RecordMode::None disarms
     void queueSequence (int index);   // switches at loop end while playing, now when stopped
@@ -92,6 +106,9 @@ public:
     double getCountInTicks() const { return countInRemaining; }
     int getCurrentSequence() const { return currentSequence; }
     int getQueuedSequence() const { return queuedSequence; }
+    int getSongStep() const { return songStep; }
+    int getSongRepeat() const { return songRepeat; }
+    bool isPlayingSong() const { return playingSong; }
     uint32_t getPassCount() const { return passCount; }
 
     /** Called when a REC pass completes and switches to overdub (lets the engine clear Fresh flags). */
@@ -104,13 +121,14 @@ private:
         int targetPad = 0;
         int velocity = 0;
         float tune = 0.0f;
+        NoteVariation variation;
         int64_t recordTickUnwrapped = -1; // for note length on release
         int64_t recordedTick = -1;
         int64_t freeAnchor = 0;           // note repeat anchor while stopped
     };
 
     void mapInput (const PerformanceSettings& s, int physicalPad, int value,
-                   int& targetPad, int& velocity, float& tune) const;
+                   int& targetPad, int& velocity, float& tune, NoteVariation& var) const;
     bool isTargetHeld (int targetPad) const;
     void scanSegment (Project& p, const PerformanceSettings& s, double segStart, double segEnd,
                       double cursor, double tps, int numSamples, ActionList& out);
@@ -123,7 +141,8 @@ private:
                           double tps, bool playing, double rawUnwrapped, double blockEndUnwrapped,
                           ActionList& out);
     void recordHit (Project& p, const PerformanceSettings& s, int targetPad, int velocity, float tune,
-                    double rawUnwrapped, double blockEndUnwrapped, HeldPad& held);
+                    NoteVariation var, double rawUnwrapped, double blockEndUnwrapped, HeldPad& held);
+    bool advanceSong (const Project& p); // false when the song has ended
 
     double sampleRate = 44100.0;
     State state = State::Stopped;
@@ -137,6 +156,8 @@ private:
     uint32_t passCount = 0;
     bool countInPending = false;
     bool pendingFlagClear = false;
+    bool playingSong = false, songEnded = false;
+    int songIndex = 0, songStep = 0, songRepeat = 0;
     std::array<HeldPad, kNumPads> held {};
 };
 

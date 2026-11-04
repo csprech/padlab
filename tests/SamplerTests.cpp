@@ -146,6 +146,28 @@ struct SamplerTests : juce::UnitTest
             expect (rms (out, 0, 50, 400) > 0.1f);
             expect (rms (out, 0, 510, 400) == 0.0f);
         }
+        {
+            beginTest ("note variation: decay and attack change the envelope of that note only");
+            Program prog;
+            prog.pads[0].layers[0].sample = constantSample (4800);
+            prog.pads[0].sustain = 0.0f;
+            prog.pads[0].decayMs = 40.0f;
+            auto levelAt = [&] (NoteVariation var, int from) {
+                Sampler s;
+                s.prepare (sr);
+                out.clear();
+                s.trigger (prog, 0, 0, 127, 0.0f, -1, var);
+                s.render (out, 0, 4800);
+                return rms (out, 0, from, 200);
+            };
+            const float plain = levelAt ({}, 1500);
+            const float longer = levelAt ({ VariationType::Decay, 127 }, 1500);
+            const float shorter = levelAt ({ VariationType::Decay, 0 }, 1500);
+            expect (longer > plain * 2.0f, "decay x4 rings longer");
+            expect (shorter < plain * 0.5f, "decay x0.25 dies sooner");
+            const float attackStart = levelAt ({ VariationType::Attack, 127 }, 0);
+            expect (attackStart < levelAt ({}, 0) * 0.2f, "slow attack fades in");
+        }
     }
 };
 

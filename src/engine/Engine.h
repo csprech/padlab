@@ -75,6 +75,16 @@ public:
     double getCountInTicks() const { return uiCountIn.load(); }
     int getCurrentSequence() const { return uiSequence.load(); }
     int getQueuedSequence() const { return uiQueued.load(); }
+    bool isPlayingSong() const { return uiPlayingSong.load(); }
+    int getSongStep() const { return uiSongStep.load(); }
+    int getSongRepeat() const { return uiSongRepeat.load(); }
+
+    // ------------------------------------------------------------ output / input levels
+    /** MAIN VOLUME knob, 0..1 (audio taper applied here). */
+    void setMainVolume (float v01) { mainVolume = juce::jlimit (0.0f, 1.0f, v01); }
+    float getMainVolume() const { return mainVolume.load(); }
+    /** REC GAIN knob in dB (-12..+24), applied to the audio input when sampling. */
+    void setRecGainDb (float db) { recGain = juce::Decibels::decibelsToGain (juce::jlimit (-12.0f, 24.0f, db)); }
 
     // ------------------------------------------------------------ undo (message thread)
     void pushUndo (const juce::String& what);
@@ -183,6 +193,14 @@ private:
     std::atomic<int> currentBank { 0 };
     std::array<int, 128> midiNotePad = [] { std::array<int, 128> a {}; a.fill (-1); return a; }(); // MIDI thread only
     std::atomic<int> uiState { 0 }, uiRecordMode { 0 }, uiSequence { 0 }, uiQueued { -1 };
+    std::atomic<int> uiSongStep { 0 }, uiSongRepeat { 0 };
+    std::atomic<bool> uiPlayingSong { false };
+    std::atomic<float> mainVolume { 0.8f }, recGain { 1.0f };
+    float smoothedVolume = 0.8f;
+
+    // vintage converter emulation state (audio thread)
+    float vintageLp1[2] {}, vintageLp2[2] {};
+    void applyVintage (int mode, float* l, float* r, int numSamples);
     std::atomic<double> uiPosition { 0.0 }, uiCountIn { 0.0 };
     std::array<std::atomic<uint32_t>, kNumPads> padHits {};
     std::array<std::atomic<int>, kNumPads> padHitVel {};

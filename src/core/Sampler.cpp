@@ -78,7 +78,8 @@ void Sampler::choke (int track, int pad, int muteGroup, bool includeSamePad)
     }
 }
 
-void Sampler::trigger (const Program& program, int track, int pad, int velocity, float tuneOffset, int releaseAfter)
+void Sampler::trigger (const Program& program, int track, int pad, int velocity, float tuneOffset, int releaseAfter,
+                       NoteVariation var)
 {
     if (pad < 0 || pad >= kNumPads)
         return;
@@ -120,9 +121,24 @@ void Sampler::trigger (const Program& program, int track, int pad, int velocity,
         v.gainL = gain * std::cos (angle) * juce::MathConstants<float>::sqrt2;
         v.gainR = gain * std::sin (angle) * juce::MathConstants<float>::sqrt2;
 
+        // Note Variation (64 = unchanged): decay x0.25..x4, attack 0..500 ms, cutoff +/-4 octaves
+        const float vv = (float) var.value;
+        float attackMs = p.attackMs, decayMs = p.decayMs, cutoffHz = p.cutoffHz;
+        FilterType filterType = p.filter;
+        if (var.type == VariationType::Decay)
+            decayMs *= std::pow (2.0f, (vv - 64.0f) / 32.0f);
+        else if (var.type == VariationType::Attack)
+            attackMs = 500.0f * (vv / 127.0f) * (vv / 127.0f);
+        else if (var.type == VariationType::Filter)
+        {
+            cutoffHz = (filterType == FilterType::Off ? 16000.0f : cutoffHz) * std::pow (2.0f, (vv - 64.0f) / 16.0f);
+            if (filterType == FilterType::Off && var.value < 64)
+                filterType = FilterType::LowPass;
+        }
+
         juce::ADSR::Parameters ap;
-        ap.attack = std::max (0.0005f, p.attackMs / 1000.0f);
-        ap.decay = std::max (0.001f, p.decayMs / 1000.0f);
+        ap.attack = std::max (0.0005f, attackMs / 1000.0f);
+        ap.decay = std::max (0.001f, decayMs / 1000.0f);
         ap.sustain = juce::jlimit (0.0f, 1.0f, p.sustain);
         ap.release = std::max (0.002f, p.releaseMs / 1000.0f);
         v.env.setSampleRate (sampleRate);
@@ -134,10 +150,10 @@ void Sampler::trigger (const Program& program, int track, int pad, int velocity,
         v.releaseCountdown = v.oneShot ? -1 : releaseAfter;
         v.fadeRemaining = -1;
 
-        v.filter = p.filter;
+        v.filter = filterType;
         if (v.filter != FilterType::Off)
         {
-            const double fc = juce::jlimit (20.0, sampleRate * 0.45, (double) p.cutoffHz);
+            const double fc = juce::jlimit (20.0, sampleRate * 0.45, (double) cutoffHz);
             const float g = (float) std::tan (juce::MathConstants<double>::pi * fc / sampleRate);
             v.k = 2.0f - 1.95f * juce::jlimit (0.0f, 1.0f, p.resonance);
             v.a1 = 1.0f / (1.0f + g * (g + v.k));

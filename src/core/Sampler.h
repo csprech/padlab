@@ -15,7 +15,8 @@ public:
     void prepare (double sampleRate);
 
     /** Start a pad. releaseAfter: samples until note-off for Note-On pads; -1 = until release(). */
-    void trigger (const Program& program, int track, int pad, int velocity, float tuneOffset, int releaseAfter);
+    void trigger (const Program& program, int track, int pad, int velocity, float tuneOffset, int releaseAfter,
+                  NoteVariation variation = {});
 
     /** Note-off for held live pads (Note-On trigger mode only). */
     void release (int track, int pad);

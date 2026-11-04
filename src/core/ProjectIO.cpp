@@ -29,6 +29,7 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
     set (root, "version", kFormatVersion);
     set (root, "name", p.name);
     set (root, "masterLevelDb", p.masterLevelDb);
+    set (root, "vintageMode", p.vintageMode);
 
     juce::Array<juce::var> samples;
     for (auto& s : p.samplePool)
@@ -112,8 +113,15 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
             set (to, "solo", t.solo);
             juce::Array<juce::var> events;
             for (auto& e : t.events)
-                events.add (juce::Array<juce::var> { (juce::int64) e.tick, (int) e.pad, (int) e.velocity,
-                                                     (int) e.length, e.tune });
+            {
+                juce::Array<juce::var> ev { (juce::int64) e.tick, (int) e.pad, (int) e.velocity, (int) e.length, e.tune };
+                if (e.variation.type != VariationType::None) // optional: [.., varType, varValue]
+                {
+                    ev.add ((int) e.variation.type);
+                    ev.add ((int) e.variation.value);
+                }
+                events.add (ev);
+            }
             set (to, "events", events);
             tracks.add (to);
         }
@@ -121,6 +129,21 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
         seqs.add (so);
     }
     set (root, "sequences", seqs);
+
+    juce::Array<juce::var> songs;
+    for (auto& sg : p.songs)
+    {
+        auto so = obj();
+        set (so, "name", sg.name);
+        set (so, "loop", sg.loop);
+        set (so, "loopToStep", sg.loopToStep);
+        juce::Array<juce::var> steps;
+        for (int i = 0; i < sg.numSteps; ++i)
+            steps.add (juce::Array<juce::var> { sg.steps[(size_t) i].sequence, sg.steps[(size_t) i].repeats });
+        set (so, "steps", steps);
+        songs.add (so);
+    }
+    set (root, "songs", songs);
     return root;
 }
 
@@ -140,6 +163,7 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
     Project p;
     p.name = get (json, "name", "Untitled").toString();
     p.masterLevelDb = (float) get (json, "masterLevelDb", 0.0);
+    p.vintageMode = juce::jlimit (0, 2, (int) get (json, "vintageMode", 0));
 
     if (auto* samples = get (json, "samples").getArray())
         for (auto& so : *samples)
@@ -232,10 +256,28 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
                             e.velocity = (uint8_t) juce::jlimit (1, 127, (int) ev[2]);
                             e.length = std::max (1, (int) ev[3]);
                             e.tune = (float) (double) ev[4];
+                            if (ev.size() >= 7)
+                                e.variation = { (VariationType) juce::jlimit (0, 4, (int) ev[5]),
+                                                (uint8_t) juce::jlimit (0, 127, (int) ev[6]) };
                             if (e.tick >= 0 && e.tick < seq.getLengthTicks())
                                 t.insertSorted (e);
                         }
                 }
+        }
+
+    if (auto* songs = get (json, "songs").getArray())
+        for (int si = 0; si < std::min (songs->size(), kNumSongs); ++si)
+        {
+            const auto& so = songs->getReference (si);
+            auto& sg = p.songs[(size_t) si];
+            sg.name = get (so, "name", sg.name).toString();
+            sg.loop = (bool) get (so, "loop", false);
+            sg.numSteps = 0;
+            if (auto* steps = get (so, "steps").getArray())
+                for (auto& st : *steps)
+                    if (st.isArray() && st.size() >= 2)
+                        sg.insertStep (sg.numSteps, { (int) st[0], (int) st[1] });
+            sg.loopToStep = juce::jlimit (0, juce::jmax (0, sg.numSteps - 1), (int) get (so, "loopToStep", 0));
         }
 
     out = std::move (p);

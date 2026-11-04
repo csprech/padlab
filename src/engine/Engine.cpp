@@ -324,8 +324,21 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
     commands.drain ([&] (const Command& c) {
         switch (c.type)
         {
-            case Command::Play:      transport.play (false, settings.countIn); break;
-            case Command::PlayStart: transport.locate (0); transport.play (true, settings.countIn); break;
+            case Command::Play:
+                if (settings.songMode)
+                    transport.playSong (proj, settings.currentSong, settings.songStartStep);
+                else
+                    transport.play (false, settings.countIn);
+                break;
+            case Command::PlayStart:
+                if (settings.songMode)
+                    transport.playSong (proj, settings.currentSong, 0);
+                else
+                {
+                    transport.locate (0);
+                    transport.play (true, settings.countIn);
+                }
+                break;
             case Command::Stop:      transport.stop(); break;
             case Command::Record:    transport.armRecord ((RecordMode) c.value); break;
             case Command::Queue:     transport.queueSequence ((int) c.value); break;
@@ -377,7 +390,7 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
             case Action::Trigger:
             {
                 const auto& prog = proj.programs[(size_t) seq.tracks[(size_t) a.track].programIndex];
-                sampler.trigger (prog, a.track, a.pad, a.velocity, a.tune, a.releaseAfter);
+                sampler.trigger (prog, a.track, a.pad, a.velocity, a.tune, a.releaseAfter, a.variation);
                 if (a.track == settings.currentTrack && a.pad >= 0 && a.pad < kNumPads)
                 {
                     padHitVel[(size_t) a.pad] = a.velocity;
@@ -447,6 +460,9 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         trackPeaks[(size_t) t] = peak;
     }
 
+    if (proj.vintageMode != 0 && masterL != nullptr)
+        applyVintage (proj.vintageMode, masterL, masterR, numSamples);
+
     float peakL = 0.0f, peakR = 0.0f;
     for (int i = 0; i < numSamples; ++i)
     {
@@ -461,12 +477,13 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         const bool resample = recResample.load();
         const float* srcL = resample ? masterL : (numIn > 0 ? inputs[0] : nullptr);
         const float* srcR = resample ? (masterR != nullptr ? masterR : masterL) : (numIn > 1 ? inputs[1] : srcL);
+        const float inGain = resample ? 1.0f : recGain.load(); // REC GAIN acts on the audio input only
         float inPeakL = 0.0f, inPeakR = 0.0f;
         if (srcL != nullptr)
             for (int i = 0; i < numSamples; ++i)
             {
-                inPeakL = std::max (inPeakL, std::abs (srcL[i]));
-                inPeakR = std::max (inPeakR, std::abs (srcR[i]));
+                inPeakL = std::max (inPeakL, std::abs (srcL[i] * inGain));
+                inPeakR = std::max (inPeakR, std::abs (srcR[i] * inGain));
             }
         inputPeaks[0] = inPeakL;
         inputPeaks[1] = inPeakR;
@@ -483,8 +500,8 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
             const int n = std::min (room, numSamples);
             if (n > 0)
             {
-                recBuffer.copyFrom (0, written, srcL, n);
-                recBuffer.copyFrom (1, written, srcR, n);
+                recBuffer.copyFrom (0, written, srcL, n, inGain);
+                recBuffer.copyFrom (1, written, srcR, n, inGain);
                 recWritten = written + n;
             }
             if (n < numSamples || recStopRequest.load())
@@ -501,7 +518,23 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         recStopRequest = false;
     }
 
+    // ---- MAIN VOLUME (after resampling, like the analog output stage); smoothed to avoid zipper noise
+    {
+        const float v = mainVolume.load();
+        const float target = v * v; // audio taper
+        const float start = smoothedVolume;
+        const float step = (target - start) / (float) juce::jmax (1, numSamples);
+        for (int c = 0; c < juce::jmin (2, numOut); ++c)
+            if (auto* out = outputs[c])
+                for (int i = 0; i < numSamples; ++i)
+                    out[i] *= start + step * (float) (i + 1);
+        smoothedVolume = target;
+    }
+
     // ---- publish state for the UI
+    uiPlayingSong = transport.isPlayingSong();
+    uiSongStep = transport.getSongStep();
+    uiSongRepeat = transport.getSongRepeat();
     uiState = (int) transport.getState();
     uiRecordMode = (int) transport.getRecordMode();
     uiPosition = transport.getPositionTicks();
@@ -513,6 +546,37 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
     for (int c = 2; c < numOut; ++c)
         if (outputs[c] != nullptr)
             juce::FloatVectorOperations::clear (outputs[c], numSamples);
+}
+
+void Engine::applyVintage (int mode, float* l, float* r, int n)
+{
+    // Converter character of classic samplers, applied on the master bus:
+    //  1: 12-bit / 40 kHz era - coarse 12-bit quantisation and a steep-ish anti-alias roll-off (~12 kHz)
+    //  2: 16-bit warm - gentle roll-off (~17 kHz) and soft analog-style saturation
+    const double sr = sampleRate.load();
+    const float fc = mode == 1 ? 12000.0f : 17000.0f;
+    const float a = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / (float) sr);
+    float* ch[2] = { l, r != nullptr ? r : nullptr };
+    for (int c = 0; c < 2; ++c)
+    {
+        if (ch[c] == nullptr)
+            continue;
+        float s1 = vintageLp1[c], s2 = vintageLp2[c];
+        for (int i = 0; i < n; ++i)
+        {
+            float x = ch[c][i];
+            s1 += a * (x - s1);
+            s2 += a * (s1 - s2);
+            x = mode == 1 ? s2 : s1;
+            if (mode == 1)
+                x = std::round (juce::jlimit (-1.0f, 1.0f, x) * 2047.0f) / 2047.0f;
+            else
+                x = std::tanh (x * 1.15f) / std::tanh (1.15f);
+            ch[c][i] = x;
+        }
+        vintageLp1[c] = s1;
+        vintageLp2[c] = s2;
+    }
 }
 
 } // namespace padlab

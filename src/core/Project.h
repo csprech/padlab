@@ -25,6 +25,8 @@ constexpr int kNumLayers     = 4;
 constexpr int kNumTracks     = 8;
 constexpr int kNumSequences  = 16;
 constexpr int kMaxVoices     = 64;
+constexpr int kNumSongs      = 8;
+constexpr int kMaxSongSteps  = 99;
 constexpr int kEventCapacity = 4096;  // per track; pre-reserved so the audio thread never reallocates
 
 struct Sample
@@ -82,6 +84,17 @@ struct Program
     float pan     = 0.0f;
 };
 
+/** Note Variation: one sound parameter varied per note (the slider / 16 Levels).
+    value 0..127, 64 = unchanged. Tune is carried in NoteEvent::tune instead. */
+enum class VariationType : uint8_t { None = 0, Tune = 1, Decay = 2, Attack = 3, Filter = 4 };
+
+struct NoteVariation
+{
+    VariationType type = VariationType::None;
+    uint8_t value = 64;
+    bool operator== (const NoteVariation& o) const { return type == o.type && value == o.value; }
+};
+
 struct NoteEvent
 {
     enum Flags : uint8_t { SkipOnce = 1, Fresh = 2 };
@@ -91,7 +104,8 @@ struct NoteEvent
     uint8_t velocity = 100;
     uint8_t flags = 0;
     int32_t length = kPPQN / 4; // ticks (used by Note-On pads)
-    float tune = 0.0f;          // per-note tune offset (16 Levels: tune)
+    float tune = 0.0f;          // per-note tune offset (16 Levels / Note Variation: tune)
+    NoteVariation variation;    // decay / attack / filter variation
 };
 
 struct Track
@@ -122,13 +136,34 @@ struct Sequence
     bool anySolo() const;
 };
 
+/** Song mode: sequences played in order, each repeated a number of times. */
+struct SongStep
+{
+    int sequence = 0;
+    int repeats = 1;
+};
+
+struct Song
+{
+    juce::String name = "Song";
+    std::array<SongStep, kMaxSongSteps> steps {};
+    int numSteps = 0;
+    bool loop = false;
+    int loopToStep = 0;
+
+    bool insertStep (int index, SongStep step);
+    void removeStep (int index);
+};
+
 struct Project
 {
     juce::String name = "Untitled";
     std::vector<SamplePtr> samplePool;
     std::array<Program, kNumTracks> programs;
     std::array<Sequence, kNumSequences> sequences;
+    std::array<Song, kNumSongs> songs;
     float masterLevelDb = 0.0f;
+    int vintageMode = 0; // 0 clean, 1 = 12-bit 40 kHz character, 2 = 16-bit warm converter character
 
     Project();
     SamplePtr findSample (const juce::String& name) const;

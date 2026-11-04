@@ -90,3 +90,30 @@ juce::String Project::makeUniqueSampleName (const juce::String& base) const
 }
 
 } // namespace padlab
+
+namespace padlab
+{
+bool Song::insertStep (int index, SongStep step)
+{
+    if (numSteps >= kMaxSongSteps)
+        return false;
+    index = juce::jlimit (0, numSteps, index);
+    for (int i = numSteps; i > index; --i)
+        steps[(size_t) i] = steps[(size_t) i - 1];
+    step.sequence = juce::jlimit (0, kNumSequences - 1, step.sequence);
+    step.repeats = juce::jlimit (1, 99, step.repeats);
+    steps[(size_t) index] = step;
+    ++numSteps;
+    return true;
+}
+
+void Song::removeStep (int index)
+{
+    if (index < 0 || index >= numSteps)
+        return;
+    for (int i = index; i < numSteps - 1; ++i)
+        steps[(size_t) i] = steps[(size_t) i + 1];
+    --numSteps;
+    loopToStep = juce::jlimit (0, juce::jmax (0, numSteps - 1), loopToStep);
+}
+} // namespace padlab

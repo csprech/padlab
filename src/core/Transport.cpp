@@ -25,9 +25,50 @@ void Transport::play (bool fromStart, bool countIn)
     countInPending = (state == State::CountIn);
 }
 
+void Transport::playSong (const Project& p, int song, int fromStep)
+{
+    if (state != State::Stopped)
+        return;
+    const auto& sg = p.songs[(size_t) std::clamp (song, 0, kNumSongs - 1)];
+    if (sg.numSteps <= 0)
+        return;
+    playingSong = true;
+    songEnded = false;
+    songIndex = std::clamp (song, 0, kNumSongs - 1);
+    songStep = std::clamp (fromStep, 0, sg.numSteps - 1);
+    songRepeat = 0;
+    currentSequence = std::clamp (sg.steps[(size_t) songStep].sequence, 0, kNumSequences - 1);
+    queuedSequence = -1;
+    recordMode = RecordMode::None; // songs play back; recording happens in sequences
+    position = 0.0;
+    unwrappedBase = 0.0;
+    passCount = 0;
+    countInRemaining = 0.0;
+    state = State::Playing;
+}
+
+bool Transport::advanceSong (const Project& p)
+{
+    const auto& sg = p.songs[(size_t) songIndex];
+    if (sg.numSteps <= 0)
+        return false;
+    if (++songRepeat < std::max (1, sg.steps[(size_t) std::clamp (songStep, 0, sg.numSteps - 1)].repeats))
+        return true;
+    songRepeat = 0;
+    if (++songStep >= sg.numSteps)
+    {
+        if (! sg.loop)
+            return false;
+        songStep = std::clamp (sg.loopToStep, 0, sg.numSteps - 1);
+    }
+    currentSequence = std::clamp (sg.steps[(size_t) songStep].sequence, 0, kNumSequences - 1);
+    return true;
+}
+
 void Transport::stop()
 {
     state = State::Stopped;
+    playingSong = false;
     recordMode = RecordMode::None;
     pendingFlagClear = true;
 }
@@ -63,11 +104,12 @@ void Transport::clearFreshFlags (Track& t)
 }
 
 void Transport::mapInput (const PerformanceSettings& s, int physicalPad, int value,
-                          int& targetPad, int& velocity, float& tune) const
+                          int& targetPad, int& velocity, float& tune, NoteVariation& var) const
 {
     targetPad = physicalPad;
     velocity = std::clamp (value, 1, 127);
     tune = 0.0f;
+    var = {};
 
     if (s.sixteenLevels)
     {
@@ -75,7 +117,18 @@ void Transport::mapInput (const PerformanceSettings& s, int physicalPad, int val
         targetPad = std::clamp (s.sixteenLevelsSource, 0, kNumPads - 1);
         if (s.sixteenLevelsParam == 0)
             return void (velocity = (idx + 1) * 8 - 1); // 7 .. 127
-        tune = (float) (idx - 8);                       // -8 .. +7 semitones
+        if (s.sixteenLevelsParam == 1)
+            tune = (float) (idx - 8);                   // -8 .. +7 semitones
+        else
+            var = { (VariationType) std::clamp (s.sixteenLevelsParam, 2, 4), (uint8_t) std::lround (idx * 127.0 / 15.0) };
+    }
+    else if (s.noteVariationOn && (s.noteVariationPad < 0 || s.noteVariationPad == targetPad))
+    {
+        const int v = std::clamp (s.noteVariationValue, 0, 127);
+        if (s.noteVariationType == VariationType::Tune)
+            tune = (float) std::round ((v - 64) / 64.0 * 12.0 * 10.0) / 10.0f; // +/- 1 octave
+        else if (s.noteVariationType != VariationType::None)
+            var = { s.noteVariationType, (uint8_t) v };
     }
 
     if (s.fullLevel)
@@ -154,6 +207,7 @@ void Transport::scanSegment (Project& p, const PerformanceSettings& s, double se
                 a.pad = it->pad;
                 a.velocity = it->velocity;
                 a.tune = it->tune;
+                a.variation = it->variation;
                 a.releaseAfter = std::max (1, (int) std::lround (it->length / tps));
                 out.add (a);
             }
@@ -198,6 +252,7 @@ void Transport::repeatSegment (Project& p, const PerformanceSettings& s, double 
             a.pad = h.targetPad;
             a.velocity = h.velocity;
             a.tune = h.tune;
+            a.variation = h.variation;
             a.releaseAfter = releaseSamples;
             out.add (a);
 
@@ -208,6 +263,7 @@ void Transport::repeatSegment (Project& p, const PerformanceSettings& s, double 
                 e.pad = (int16_t) h.targetPad;
                 e.velocity = (uint8_t) h.velocity;
                 e.tune = h.tune;
+                e.variation = h.variation;
                 e.length = div.ticks / 2;
                 e.flags = (recordMode == RecordMode::Record) ? NoteEvent::Fresh : 0;
                 track.insertSorted (e);
@@ -245,6 +301,13 @@ void Transport::handleWrap (Project& p, const PerformanceSettings& s)
         clearFreshFlags (seq.tracks[(size_t) std::clamp (s.currentTrack, 0, kNumTracks - 1)]);
     }
 
+    if (playingSong)
+    {
+        if (! advanceSong (p))
+            songEnded = true;
+        return;
+    }
+
     if (queuedSequence >= 0)
     {
         currentSequence = queuedSequence;
@@ -253,7 +316,7 @@ void Transport::handleWrap (Project& p, const PerformanceSettings& s)
 }
 
 void Transport::recordHit (Project& p, const PerformanceSettings& s, int targetPad, int velocity, float tune,
-                           double rawUnwrapped, double blockEndUnwrapped, HeldPad& h)
+                           NoteVariation var, double rawUnwrapped, double blockEndUnwrapped, HeldPad& h)
 {
     auto& seq = p.sequences[(size_t) currentSequence];
     auto& track = seq.tracks[(size_t) std::clamp (s.currentTrack, 0, kNumTracks - 1)];
@@ -276,6 +339,7 @@ void Transport::recordHit (Project& p, const PerformanceSettings& s, int targetP
     e.pad = (int16_t) targetPad;
     e.velocity = (uint8_t) velocity;
     e.tune = tune;
+    e.variation = var;
     e.length = kPPQN / 4;
     e.flags = 0;
     if (recordMode == RecordMode::Record)
@@ -339,6 +403,7 @@ void Transport::process (Project& p, const PerformanceSettings& s, const LiveInp
                     a.pad = h.targetPad;
                     a.velocity = h.velocity;
                     a.tune = h.tune;
+                    a.variation = h.variation;
                     a.releaseAfter = std::max (1, (int) std::lround ((div.ticks * 0.5) / tps));
                     out.add (a);
                     g = timing::nextGridPoint (g + 1, div.ticks, div.swingable, s.swing, s.legacy96);
@@ -404,7 +469,16 @@ void Transport::process (Project& p, const PerformanceSettings& s, const LiveInp
         cursor += (segEnd - segStart) / curTps;
         position = segEnd;
         if (position >= L - 1.0e-9)
+        {
             handleWrap (p, s);
+            if (songEnded)
+            {
+                // end of the song: stop on the last step's final bar
+                songEnded = false;
+                stop();
+                break;
+            }
+        }
     }
 
     for (int i = 0; i < numInputs; ++i)
@@ -435,11 +509,13 @@ void Transport::handleLiveInput (Project& p, const PerformanceSettings& s, const
         {
             int target = 0, vel = 0;
             float tune = 0.0f;
-            mapInput (s, in.pad, in.value, target, vel, tune);
+            NoteVariation var;
+            mapInput (s, in.pad, in.value, target, vel, tune, var);
             h.held = true;
             h.targetPad = target;
             h.velocity = vel;
             h.tune = tune;
+            h.variation = var;
             h.freeAnchor = (int64_t) std::llround (freeTicks + offset * tps);
             h.recordedTick = -1;
 
@@ -456,11 +532,12 @@ void Transport::handleLiveInput (Project& p, const PerformanceSettings& s, const
                 a.pad = target;
                 a.velocity = vel;
                 a.tune = tune;
+                a.variation = var;
                 a.releaseAfter = -1;
                 out.add (a);
 
                 if (playing && isRecording())
-                    recordHit (p, s, target, vel, tune, rawUnwrapped, blockEndUnwrapped, h);
+                    recordHit (p, s, target, vel, tune, var, rawUnwrapped, blockEndUnwrapped, h);
             }
             break;
         }
