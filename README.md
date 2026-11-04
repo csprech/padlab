@@ -25,13 +25,25 @@ Release build CPU: about 2% idle and about 19% while playing, mostly the pad hit
 
 ## Build & run
 
+### Requirements (macOS)
+
+- **Xcode Command Line Tools** (compiler and git): `xcode-select --install`
+- **CMake 3.22+ and Ninja**, e.g. with [Homebrew](https://brew.sh): `brew install cmake ninja`
+
+### Build
+
+From the project folder, run these one at a time:
+
 ```sh
-scripts/bootstrap.sh                       # fetches JUCE 8.0.15 into external/ (not committed)
+bash scripts/bootstrap.sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 open build/Padlab_artefacts/Release/Padlab.app
-./build/PadlabTests_artefacts/Release/PadlabTests   # engine + import checks
 ```
+
+- `bootstrap.sh` downloads JUCE 8.0.15 into `external/`. It isn't committed to git.
+- The first build compiles JUCE too, so it takes a few minutes.
+- To run the engine and import tests: `./build/PadlabTests_artefacts/Release/PadlabTests`
 
 ## The workflow
 
