@@ -104,6 +104,14 @@ A track can play Padlab's sounds, an external instrument over MIDI, or both.
 3. Play and record as usual. Pads send notes: bank A pads 1-16 are notes 36-51 (C1 upward), bank B 52-67, and so on. On a MIDI track the note grid shows note names.
 Notes go out timed to match the audio. Turn on SEND MIDI CLOCK in OTHER to keep the instrument's tempo in sync too.)" },
 
+    { "MIDI controllers", R"(# MIDI controllers
+Plug in a pad controller or keyboard (an MPK Mini, a Launchpad, anything class-compliant) at any time - before or after starting Padlab. The screen says "MIDI IN: <device> connected", and OTHER lists the controllers Padlab is hearing.
+- Notes 36-51 (on any channel) play pads 1-16 of the current pad bank, with velocity. Most pad controllers send these by default.
+- Aftertouch is pressure: with note repeat, harder = louder.
+- CC 70-73 turn the four Q-Link knobs, CC 74 moves the note variation fader.
+On an MPK Mini mk3: pad bank A = pads 1-8, bank B = pads 9-16, knobs K1-K4 = Q-Links, K5 = note variation.
+To ignore a controller, switch it off in DISK > Audio / MIDI setup (it comes back on if you plug it in again).)" },
+
     { "Effects", R"(# Effects
 Two send effects: a reverb and a delay that follows the tempo.
 1. In PROGRAM, set REVERB SEND and DELAY SEND for each pad (a snare with some reverb, a clap into the delay...).

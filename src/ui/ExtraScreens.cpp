@@ -863,9 +863,7 @@ public:
         midiInfo.setColour (juce::Label::textColourId, theme::lcd::textDim);
         midiInfo.setJustificationType (juce::Justification::topLeft);
         midiInfo.setMinimumHorizontalScale (1.0f); // wrap instead of squashing
-        midiInfo.setText ("MIDI IN: notes 36-51 play pads 1-16 of the current bank, aftertouch = pressure, "
-                          "CC 70-73 = Q-Links, CC 74 = note variation. MIDI devices: DISK > Audio/MIDI setup.",
-                          juce::dontSendNotification);
+        updateMidiInfo();
     }
 
     juce::String getTitle() const override { return "OTHER"; }
@@ -939,12 +937,31 @@ public:
         autoOverdub.setToggleState (s.autoOverdub, juce::dontSendNotification);
         tcStrength.setValue (s.tcStrength * 100.0, juce::dontSendNotification);
         midiClock.setToggleState (ctx.engine.getSendMidiClock(), juce::dontSendNotification);
+        updateMidiInfo();
         shift.setValue (s.shiftTicks, juce::dontSendNotification);
         if (nvTarget.getSelectedId() == 1)
             applyTarget(); // the selected pad changed
     }
 
+    void refresh() override
+    {
+        // controllers can be plugged in while this screen is open
+        if (++refreshTick % 20 == 0)
+            updateMidiInfo();
+    }
+
 private:
+    void updateMidiInfo()
+    {
+        const auto inputs = ctx.engine.getActiveMidiInputNames();
+        const auto text = "MIDI IN: " + (inputs.isEmpty() ? juce::String ("no controllers connected") : inputs.joinIntoString (", "))
+                          + ".  Notes 36-51 play pads 1-16 of the current bank, aftertouch = pressure, CC 70-73 = Q-Links, "
+                            "CC 74 = note variation. Plug controllers in any time; DISK > Audio/MIDI setup turns them on/off.";
+        if (midiInfo.getText() != text)
+            midiInfo.setText (text, juce::dontSendNotification);
+    }
+
+    int refreshTick = 0;
     template <typename Fn>
     void fx (Fn&& fn)
     {

@@ -130,6 +130,11 @@ public:
         delivered on the message thread. */
     std::function<void (int knob, int value)> onQLinkMidi;
 
+    /** "MIDI IN: <device> connected / disconnected", delivered on the message thread. */
+    std::function<void (const juce::String&)> onMidiDeviceMessage;
+    /** Names of the MIDI inputs Padlab is listening to (message thread). */
+    juce::StringArray getActiveMidiInputNames() const;
+
 private:
     /** The SpinLock isn't re-entrant: catch accidental nesting on the UI thread in debug builds. */
     struct LockGuard
@@ -186,6 +191,7 @@ private:
     };
 
     void pushPad (LiveInput in, bool fromMidi);
+    void midiDevicesChanged();
     void renderClick (float* l, float* r, int start, int num);
 
     juce::AudioDeviceManager deviceManager;
@@ -250,6 +256,10 @@ private:
     std::unique_ptr<juce::MidiOutput> clockOut; // guarded by clockOutLock
     juce::String clockOutId;
     std::unique_ptr<ClockSender> clockSender;
+
+    // MIDI inputs: listen to every enabled input; switch on devices the first time they appear
+    juce::Array<juce::MidiDeviceInfo> knownMidiInputs;
+    juce::MidiDeviceListConnection midiDeviceListConnection;
     float smoothedVolume = 0.8f;
 
     // vintage converter emulation state (audio thread)

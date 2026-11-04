@@ -102,6 +102,20 @@ Press **HELP** on the panel (under the floppy drive) or `?` for the same guides 
 5. **UNDO SEQ** (`Cmd-Z`) takes back the last pass.
 6. Fine-tune individual notes in **STEP EDIT** (F2).
 
+### Use a MIDI controller (e.g. MPK Mini)
+Plug it in. It works whether you connect it before or after starting Padlab. The screen shows "MIDI IN: <device> connected", and the OTHER screen lists the controllers Padlab is listening to.
+
+| Controller sends | Padlab does |
+|---|---|
+| Notes 36–51 (any channel) | Pads 1–16 of the current pad bank, velocity-sensitive (switch banks with PAD BANK or `[` `]`) |
+| Aftertouch (poly or channel) | Pressure: note repeat gets louder as you press harder |
+| CC 70–73 | The four Q-Link knobs: tune, cutoff, resonance, decay of the selected pad |
+| CC 74 | The NOTE VARIATION fader |
+
+On an **MPK Mini mk3** with factory settings, pad bank A plays pads 1–8, bank B plays pads 9–16, knobs K1–K4 turn the Q-Links and K5 moves Note Variation. Its note repeat and arpeggiator work too, since they just send notes. On the keys, only C3–D#3 (notes 48–51) do anything, playing pads 13–16. Older or re-programmed controllers may send different notes or CCs; remap them in the controller's editor.
+
+To ignore a controller, switch it off in DISK > Audio / MIDI setup. It switches back on if you unplug it and plug it in again.
+
 ### Play an external synth or drum machine
 1. Choose the MIDI output in **DISK** > Audio / MIDI setup.
 2. On **MAIN**, select a track and set **OUT** to the instrument's MIDI channel. Choose DRUM + MIDI to hear Padlab's sounds as well.
@@ -167,7 +181,7 @@ A 4-minute song converts in about a third of a second. Other platforms: MP3/M4A 
 | In TRIM: `H` `M` `Delete` `J` `K` `P` `T` | Chop, mark a chop, delete chop (`Cmd-Delete` clears), previous / next slice, play slice, trim to slice |
 | `Cmd-Z` / `Cmd-S` / `Cmd-Shift-S` / `Cmd-O` / `Cmd-N` | Undo / Save / Save As / Open / New |
 
-Double-press STOP to silence every voice. MIDI pad controllers: notes 36–51 play pads 1–16 of the current bank, and poly or channel aftertouch provides pressure.
+Double-press STOP to silence every voice. MIDI controllers are covered in "Use a MIDI controller" above.
 
 ## Architecture
 
@@ -213,6 +227,6 @@ tests/         JUCE UnitTest suites for all of core/ (fixtures/: small MP3/M4A f
 - Keygroup (chromatic) programs, audio tracks, plugin hosting, per-track insert FX.
 - Time-stretch and warp.
 - Import of other samplers' program formats.
-- MIDI clock in (following an external clock), MIDI learn, MIDI program changes, chromatic MIDI-track input from a keyboard.
+- MIDI clock in (following an external clock), MIDI learn (remapping controller pads and knobs), transport control from a controller, MIDI program changes, chromatic MIDI-track input from a keyboard.
 - Auto punch in/out points.
 - The Save/Open file dialogs haven't been exercised by automated tests (the save/load code underneath has).

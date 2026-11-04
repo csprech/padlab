@@ -26,11 +26,14 @@ Engine::Engine()
     deviceManager.initialiseWithDefaultDevices (0, 2);
     deviceManager.addAudioCallback (this);
 
-    for (auto& info : juce::MidiInput::getAvailableDevices())
-    {
+    // MIDI in: one callback for every enabled input (an empty identifier means "all"), so controllers
+    // plugged in later are heard too. Everything present now is switched on; new devices are
+    // switched on when they appear (see midiDevicesChanged).
+    deviceManager.addMidiInputDeviceCallback ({}, this);
+    knownMidiInputs = juce::MidiInput::getAvailableDevices();
+    for (auto& info : knownMidiInputs)
         deviceManager.setMidiInputDeviceEnabled (info.identifier, true);
-        deviceManager.addMidiInputDeviceCallback (info.identifier, this);
-    }
+    midiDeviceListConnection = juce::MidiDeviceListConnection::make ([this] { midiDevicesChanged(); });
     // testing aid: PADLAB_MIDI_CLOCK_OUT="<output name>" turns MIDI clock on to that output
     if (auto* name = std::getenv ("PADLAB_MIDI_CLOCK_OUT"))
         for (auto& info : juce::MidiOutput::getAvailableDevices())
@@ -49,10 +52,47 @@ Engine::~Engine()
     clockSender->stopTimer();
     clockSender.reset();
     stopTimer();
+    midiDeviceListConnection.reset();
     deviceManager.removeAudioCallback (this);
-    for (auto& info : juce::MidiInput::getAvailableDevices())
-        deviceManager.removeMidiInputDeviceCallback (info.identifier, this);
+    deviceManager.removeMidiInputDeviceCallback ({}, this);
     deviceManager.closeAudioDevice();
+}
+
+void Engine::midiDevicesChanged()
+{
+    // message thread: a MIDI device was plugged in or removed
+    const auto now = juce::MidiInput::getAvailableDevices();
+    auto contains = [] (const juce::Array<juce::MidiDeviceInfo>& list, const juce::MidiDeviceInfo& d) {
+        for (auto& x : list)
+            if (x.identifier == d.identifier)
+                return true;
+        return false;
+    };
+    juce::StringArray messages;
+    for (auto& d : now)
+        if (! contains (knownMidiInputs, d))
+        {
+            // new (or re-plugged): switch it on. A device switched off in Audio/MIDI setup stays off
+            // while it remains plugged in; plugging it in again switches it back on.
+            deviceManager.setMidiInputDeviceEnabled (d.identifier, true);
+            messages.add ("MIDI IN: " + d.name + " connected");
+        }
+    for (auto& d : knownMidiInputs)
+        if (! contains (now, d))
+            messages.add ("MIDI IN: " + d.name + " disconnected");
+    knownMidiInputs = now;
+    if (onMidiDeviceMessage)
+        for (auto& m : messages)
+            onMidiDeviceMessage (m);
+}
+
+juce::StringArray Engine::getActiveMidiInputNames() const
+{
+    juce::StringArray names;
+    for (auto& d : juce::MidiInput::getAvailableDevices())
+        if (deviceManager.isMidiInputDeviceEnabled (d.identifier))
+            names.add (d.name);
+    return names;
 }
 
 void Engine::setInputEnabled (bool enabled)

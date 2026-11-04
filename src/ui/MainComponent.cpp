@@ -128,6 +128,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     qlinks[3].setRange (5.0, 5000.0, 1.0);
     qlinks[3].setSkewFactorFromMidPoint (300.0);
     qlinks[3].setTextValueSuffix (" ms");
+    engine.onMidiDeviceMessage = [this] (const juce::String& m) { flash (m); };
     engine.onQLinkMidi = [this] (int knob, int value) {
         if (knob == 4)
             return nvFader.setValue (value);
@@ -391,6 +392,7 @@ MainComponent::~MainComponent()
     removeMouseListener (&touchTracker);
     ctx.removeChangeListener (this);
     engine.onQLinkMidi = nullptr;
+    engine.onMidiDeviceMessage = nullptr;
     juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
