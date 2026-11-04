@@ -18,6 +18,7 @@ void Transport::play (bool fromStart, bool countIn)
         return;
     if (fromStart)
         position = 0.0;
+    playStartTick = position;
     unwrappedBase = 0.0;
     passCount = 0;
     countInRemaining = 0.0;
@@ -41,6 +42,7 @@ void Transport::playSong (const Project& p, int song, int fromStep)
     queuedSequence = -1;
     recordMode = RecordMode::None; // songs play back; recording happens in sequences
     position = 0.0;
+    playStartTick = 0.0;
     unwrappedBase = 0.0;
     passCount = 0;
     countInRemaining = 0.0;

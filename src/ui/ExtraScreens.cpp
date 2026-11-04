@@ -804,6 +804,16 @@ public:
         autoOverdub.onClick = [this] {
             ctx.engine.updateSettings ([v = autoOverdub.getToggleState()] (PerformanceSettings& s) { s.autoOverdub = v; });
         };
+        midiClock.setButtonText ("Send MIDI clock");
+        midiClock.setTooltip ("Clock, start/stop and song position to the MIDI output chosen in DISK > Audio / MIDI setup");
+        midiClock.onClick = [this] {
+            ctx.engine.setSendMidiClock (midiClock.getToggleState());
+            const auto name = ctx.engine.getMidiClockOutputName();
+            if (ctx.flashMessage)
+                ctx.flashMessage (midiClock.getToggleState() ? (name.isEmpty() ? juce::String ("MIDI clock on - pick a MIDI output in DISK > Audio/MIDI setup")
+                                                                                : "MIDI clock to " + name)
+                                                             : juce::String ("MIDI clock off"));
+        };
         setupParam (tcStrength, 0, 100, 1, "%");
         tcStrength.onValueChange = [this] {
             if (! loading)
@@ -814,7 +824,7 @@ public:
                                                                     &secVar, &capNvType, &nvType, &capNvTarget, &nvTarget, &nvOn,
                                                                     &capSixteen, &sixteenParam, &secTiming, &metronome,
                                                                     &clickRecOnly, &countIn, &autoOverdub, &capTcStrength,
-                                                                    &tcStrength, &midiInfo })
+                                                                    &tcStrength, &midiClock, &midiInfo })
             addAndMakeVisible (comp);
         for (auto* l : { &secSound, &secVar, &secTiming })
         {
@@ -861,6 +871,8 @@ public:
         autoOverdub.setBounds (row.removeFromLeft (310).withTrimmedTop (14).withHeight (24));
         placeField (row, capTcStrength, tcStrength, 140);
         r.removeFromTop (10);
+        midiClock.setBounds (r.removeFromTop (26).removeFromLeft (220));
+        r.removeFromTop (4);
         midiInfo.setBounds (r.removeFromTop (40));
     }
 
@@ -881,6 +893,7 @@ public:
         countIn.setToggleState (s.countIn, juce::dontSendNotification);
         autoOverdub.setToggleState (s.autoOverdub, juce::dontSendNotification);
         tcStrength.setValue (s.tcStrength * 100.0, juce::dontSendNotification);
+        midiClock.setToggleState (ctx.engine.getSendMidiClock(), juce::dontSendNotification);
         if (nvTarget.getSelectedId() == 1)
             applyTarget(); // the selected pad changed
     }
@@ -898,7 +911,7 @@ private:
         capNvTarget { "Applies to" }, capSixteen { "16 levels by" }, capTcStrength { "Timing correct strength" };
     juce::ComboBox vintage, nvType, nvTarget, sixteenParam;
     juce::Slider masterLevel, tcStrength;
-    juce::ToggleButton nvOn, metronome, clickRecOnly, countIn, autoOverdub;
+    juce::ToggleButton nvOn, metronome, clickRecOnly, countIn, autoOverdub, midiClock;
 };
 } // namespace
 

@@ -31,11 +31,23 @@ Engine::Engine()
         deviceManager.setMidiInputDeviceEnabled (info.identifier, true);
         deviceManager.addMidiInputDeviceCallback (info.identifier, this);
     }
+    // testing aid: PADLAB_MIDI_CLOCK_OUT="<output name>" turns MIDI clock on to that output
+    if (auto* name = std::getenv ("PADLAB_MIDI_CLOCK_OUT"))
+        for (auto& info : juce::MidiOutput::getAvailableDevices())
+            if (info.name == juce::String (name))
+            {
+                deviceManager.setDefaultMidiOutputDevice (info.identifier);
+                sendMidiClock = true;
+            }
+    clockSender = std::make_unique<ClockSender> (*this);
+    clockSender->startTimer (1);
     startTimer (500);
 }
 
 Engine::~Engine()
 {
+    clockSender->stopTimer();
+    clockSender.reset();
     stopTimer();
     deviceManager.removeAudioCallback (this);
     for (auto& info : juce::MidiInput::getAvailableDevices())
@@ -84,8 +96,52 @@ void Engine::retire (SamplePtr s)
         graveyard.push_back (std::move (s));
 }
 
+void Engine::ClockSender::hiResTimerCallback()
+{
+    events.clear();
+    const bool want = engine.sendMidiClock.load();
+    const bool playing = want && engine.uiState.load() != (int) Transport::State::Stopped
+                         && engine.uiState.load() != (int) Transport::State::CountIn;
+    if (! want && ! active)
+        return;
+    // extrapolate between audio blocks so the clock doesn't jitter by the block size
+    double ticks = engine.uiRunningTicks.load();
+    if (playing)
+        ticks += juce::jmax (0.0, juce::Time::getMillisecondCounterHiRes() - engine.uiRunStampMs.load()) * engine.uiTicksPerMs.load();
+    clock.update (playing, ticks, engine.uiPlayStartTick.load(), events);
+    active = playing;
+    if (events.empty())
+        return;
+    const juce::ScopedLock sl (engine.clockOutLock);
+    if (engine.clockOut == nullptr)
+        return;
+    for (auto& e : events)
+    {
+        if (e.type == MidiClock::Msg::SongPosition)
+            engine.clockOut->sendMessageNow (juce::MidiMessage::songPositionPointer (e.songPosition));
+        else
+            engine.clockOut->sendMessageNow (juce::MidiMessage ((int) e.type));
+    }
+}
+
+juce::String Engine::getMidiClockOutputName() const
+{
+    const juce::ScopedLock sl (clockOutLock);
+    return clockOut != nullptr ? clockOut->getName() : juce::String();
+}
+
 void Engine::timerCallback()
 {
+    // follow the MIDI output chosen in Audio/MIDI setup (opened here, used by the clock thread)
+    const auto id = deviceManager.getDefaultMidiOutputIdentifier();
+    if (id != clockOutId)
+    {
+        auto out = id.isNotEmpty() ? juce::MidiOutput::openDevice (id) : nullptr;
+        const juce::ScopedLock sl (clockOutLock);
+        clockOut = std::move (out);
+        clockOutId = id;
+    }
+
     // free retired samples nobody references any more (we hold the only reference)
     graveyard.erase (std::remove_if (graveyard.begin(), graveyard.end(),
                                      [] (const SamplePtr& s) { return s.use_count() <= 1; }),
@@ -531,7 +587,11 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         smoothedVolume = target;
     }
 
-    // ---- publish state for the UI
+    // ---- publish state for the UI (and the MIDI clock thread)
+    uiRunningTicks = transport.getRunningTicks();
+    uiPlayStartTick = transport.getPlayStartTick();
+    uiTicksPerMs = proj.sequences[(size_t) transport.getCurrentSequence()].bpm / 60.0 * kPPQN / 1000.0;
+    uiRunStampMs = juce::Time::getMillisecondCounterHiRes();
     uiPlayingSong = transport.isPlayingSong();
     uiSongStep = transport.getSongStep();
     uiSongRepeat = transport.getSongRepeat();

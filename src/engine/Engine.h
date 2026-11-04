@@ -10,6 +10,7 @@
 //  * Samples removed from the project are "retired" and only freed on the message
 //    thread once no voice references them, so the audio thread never frees memory.
 
+#include "core/MidiClock.h"
 #include "core/Project.h"
 #include "core/Sampler.h"
 #include "core/Transport.h"
@@ -83,6 +84,12 @@ public:
     /** MAIN VOLUME knob, 0..1 (audio taper applied here). */
     void setMainVolume (float v01) { mainVolume = juce::jlimit (0.0f, 1.0f, v01); }
     float getMainVolume() const { return mainVolume.load(); }
+    /** MIDI clock out (24 PPQN + start/stop/continue/song position) to the MIDI output chosen in
+        Audio/MIDI setup, so drum machines and DAWs can follow Padlab. */
+    void setSendMidiClock (bool b) { sendMidiClock = b; }
+    bool getSendMidiClock() const { return sendMidiClock.load(); }
+    juce::String getMidiClockOutputName() const;
+
     /** REC GAIN knob in dB (-12..+24), applied to the audio input when sampling. */
     void setRecGainDb (float db) { recGain = juce::Decibels::decibelsToGain (juce::jlimit (-12.0f, 24.0f, db)); }
 
@@ -197,6 +204,23 @@ private:
     std::atomic<int> uiSongStep { 0 }, uiSongRepeat { 0 };
     std::atomic<bool> uiPlayingSong { false };
     std::atomic<float> mainVolume { 0.8f }, recGain { 1.0f };
+
+    // MIDI clock: the audio thread publishes where the transport is; a 1 ms timer thread sends clock
+    std::atomic<bool> sendMidiClock { false };
+    std::atomic<double> uiRunningTicks { 0.0 }, uiRunStampMs { 0.0 }, uiTicksPerMs { 1.0 }, uiPlayStartTick { 0.0 };
+    struct ClockSender : juce::HighResolutionTimer
+    {
+        explicit ClockSender (Engine& e) : engine (e) {}
+        void hiResTimerCallback() override;
+        Engine& engine;
+        MidiClock clock;
+        std::vector<MidiClock::Event> events;
+        bool active = false;
+    };
+    juce::CriticalSection clockOutLock;
+    std::unique_ptr<juce::MidiOutput> clockOut; // guarded by clockOutLock
+    juce::String clockOutId;
+    std::unique_ptr<ClockSender> clockSender;
     float smoothedVolume = 0.8f;
 
     // vintage converter emulation state (audio thread)

@@ -105,7 +105,10 @@ Pick the audio input device in DISK > Audio / MIDI setup.)" },
 - PROGRAM (F4): everything about the selected pad - up to 4 layers by velocity, tune, level, pan, attack/decay/sustain/release, filter, mute group, one-shot or note-on, poly or mono.
 - The 4 Q-LINK knobs at the top right are quick tune / cutoff / resonance / decay for the selected pad.
 - MIXER (F6): level, pan, mute and solo per track, a pad mixer for the current bank, and the master level.
-- OTHER (SHIFT + 8): the converter character - clean, 12-bit / 40 kHz era, or 16-bit warm - and metronome, count-in and timing options.)" },
+- OTHER (SHIFT + 8): the converter character - clean, 12-bit / 40 kHz era, or 16-bit warm - metronome, count-in and timing options, and MIDI clock out.
+
+# Syncing other gear
+Turn on SEND MIDI CLOCK in OTHER, and pick the MIDI output in DISK > Audio / MIDI setup. Drum machines, synths and DAWs set to follow MIDI clock will then play in time with Padlab, starting and stopping with it.)" },
 
     { "Panel controls", R"(# Panel controls
 - CURSOR (or the arrow keys) moves the brackets between the fields on the screen. You can also click a field.

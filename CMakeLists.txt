@@ -90,7 +90,8 @@ target_sources(PadlabTests PRIVATE
   tests/SamplerTests.cpp
   tests/ChopTests.cpp
   tests/ProjectIOTests.cpp
-  tests/SampleOpsTests.cpp)
+  tests/SampleOpsTests.cpp
+  tests/MidiClockTests.cpp)
 target_include_directories(PadlabTests PRIVATE src)
 target_compile_definitions(PadlabTests PRIVATE ${PADLAB_JUCE_DEFS}
   PADLAB_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")

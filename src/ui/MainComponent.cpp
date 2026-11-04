@@ -1528,7 +1528,7 @@ void MainComponent::saveProject (bool saveAs)
 
 void MainComponent::showAudioSettings()
 {
-    auto* selector = new juce::AudioDeviceSelectorComponent (engine.getDeviceManager(), 0, 2, 2, 2, true, false, true, false);
+    auto* selector = new juce::AudioDeviceSelectorComponent (engine.getDeviceManager(), 0, 2, 2, 2, true, true, true, false);
     selector->setSize (520, 460);
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (selector);

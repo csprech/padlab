@@ -109,6 +109,9 @@ public:
     int getSongStep() const { return songStep; }
     int getSongRepeat() const { return songRepeat; }
     bool isPlayingSong() const { return playingSong; }
+    /** Ticks since playback started, counting across loops (for MIDI clock). */
+    double getRunningTicks() const { return unwrappedBase + position - playStartTick; }
+    double getPlayStartTick() const { return playStartTick; }
     uint32_t getPassCount() const { return passCount; }
 
     /** Called when a REC pass completes and switches to overdub (lets the engine clear Fresh flags). */
@@ -157,6 +160,7 @@ private:
     bool countInPending = false;
     bool pendingFlagClear = false;
     bool playingSong = false, songEnded = false;
+    double playStartTick = 0.0;
     int songIndex = 0, songStep = 0, songRepeat = 0;
     std::array<HeldPad, kNumPads> held {};
 };
