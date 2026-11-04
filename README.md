@@ -55,6 +55,56 @@ open build/Padlab_artefacts/Release/Padlab.app
 - The first build compiles JUCE too, so it takes a few minutes.
 - To run the engine and import tests: `./build/PadlabTests_artefacts/Release/PadlabTests`
 
+## How to
+
+Press **HELP** on the panel (under the floppy drive) or `?` for the same guides inside the app. HELP opens on the topic for the screen you're on.
+
+### Load sounds onto pads
+1. Drag audio files from Finder onto a pad. Several files fill the following pads.
+2. Or hit a pad to select it, open **PROGRAM** (F4) and press **LOAD** on layer 1. Layers 2–4 can hold more sounds for different velocities.
+3. WAV, AIFF, FLAC and OGG load as they are. MP3, M4A and AAC are converted to WAV.
+4. Loading onto a pad replaces its sound, so this is also how you swap a kit's kick or snare.
+5. To record a new sound, use **SAMPLE** (SHIFT + 4): pick the input, set REC GAIN, press ARM, then KEEP.
+
+### Chop a sample
+1. Put the sample on a pad and hit the pad.
+2. Open **TRIM** (F5).
+3. Choose a chop mode:
+   - **Threshold** finds the hits; raise SENSITIVITY for more slices.
+   - **Regions** cuts equal slices.
+   - **BPM** cuts on the beat.
+   - **Manual** starts with no slices.
+4. Press **CHOP** or `H`.
+5. Fix the chops (the same in every mode):
+
+   | Do this | To |
+   |---|---|
+   | Click a slice | Hear it |
+   | Double-click / Shift-click | Add a chop |
+   | Cmd-click / Alt-click | Delete the nearest chop |
+   | Drag a chop line | Move it (or nudge it with SLICE START and the DATA wheel) |
+   | `Delete` / `Cmd-Delete` | Delete the selected slice's chop / clear all chops |
+   | `P` then `M` | Play the sample and tap chops in time |
+   | `J` / `K` | Previous / next slice |
+   | `T` | Trim the sample to the selected slice |
+
+6. Use the slices:
+   - **CONVERT SLICES TO PADS** puts each slice on its own pad. It can also write a sequence that replays the loop and set the tempo from it.
+   - **PAD PLAYS THIS SLICE** sets the current pad to play only the selected slice.
+
+### Record a beat
+1. On **MAIN**, set the sequence, bars and tempo. TAP TEMPO works too.
+2. Set TIMING CORRECT (1/16 is a good start) and SWING (54–62% for a lazy feel).
+3. Arm **REC** (`,`) to replace what's on the track, or **OVERDUB** (`.`) to add to it, then press **PLAY**.
+4. Hold **TAP TEMPO/NOTE REPEAT** and a pad for repeats. Hold **ERASE** and a pad to delete that pad's notes.
+5. **UNDO SEQ** (`Cmd-Z`) takes back the last pass.
+6. Fine-tune individual notes in **STEP EDIT** (F2).
+
+### Make a song
+1. Open **SONG** (F3) and use **ADD STEP**.
+2. For each step, pick a sequence and how many times it repeats.
+3. Press **PLAY START**. The song plays from step 1 and stops at the end, or loops if LOOP TO STEP is on.
+
 ## The workflow
 
 **Sample → chop → pads → play/record with swing & note repeat → sequences → mix**
@@ -70,7 +120,7 @@ open build/Padlab_artefacts/Release/Padlab.app
 | **Song** | 8 songs × 99 steps. Each step is a sequence plus a repeat count, and a song can loop back to any step. While the SONG screen is showing, **PLAY** plays the song from the selected step and **PLAY START** from step 1. The playing step is marked, and the song stops after the last step. **TO SEQUENCE** writes the whole song into an empty sequence. |
 | **Step Edit** | Every event on the current track, listed by position. Edit position, pad, velocity, length, tune and variation. **STEP < >** jumps from event to event. While stopped, hitting a pad inserts it at the cursor position. |
 | **Other** | Converter character (clean, **12-bit / 40 kHz era** or **16-bit warm** emulation on the master bus), master level, Note Variation and 16 Levels setup, metronome, count-in, auto-overdub and timing correct strength. |
-| **Sample Edit** | Chop by **Threshold** (spectral-flux transients), **Regions**, **BPM** or **Manual**. Click a slice to hear it. Normalize, reverse, trim, or set a pad to play a single slice. **Convert slices to pads** can also write a sequence that replays the loop and set the tempo from the loop length. |
+| **Sample Edit** | Chop by **Threshold** (spectral-flux transients), **Regions**, **BPM** or **Manual**, then edit the chops by hand in any mode (see "Chop a sample" above). Normalize, reverse, trim, or set a pad to play a single slice. **Convert slices to pads** can also write a sequence that replays the loop and set the tempo from the loop length. |
 | **Sampler** | Record from the audio input or **resample** the master output. Threshold-triggered start, input meters, then keep the recording on a pad (or keep and go straight to chopping). |
 | **Mixer** | Track strips (each track's program level/pan, mute, solo, meters), a pad mixer for the current bank, and a master fader. |
 | **Operating it** | As on the hardware: the **CURSOR** keys (or arrow keys) move a cursor between the fields on the LCD, and brackets mark the current one. You can also click a field. Turn the **DATA** wheel to change it (drag around the wheel, scroll over it, or press `-` / `=`). Or type a number on the **keypad** and press **ENTER**. **OPEN WINDOW** opens the field's full editor. **SHIFT** + a keypad key opens the mode printed under it (1 SONG, 2 STEP, 3 DISK, 4 SAMPLE, 5 TRIM, 6 PROGRAM, 7 MIXER, 8 OTHER, 9 MIDI, 0 MAIN). With no field selected, a keypad key opens its mode directly. The soft keys F1–F6 select MAIN, STEP, SONG, PROGRAM, TRIM and MIXER. |
@@ -102,6 +152,8 @@ A 4-minute song converts in about a third of a second. Other platforms: MP3/M4A 
 | `G` / `Esc` | GO TO / cancel a keypad entry |
 | `N` / `L` | Latch Note Repeat / Full Level |
 | `F1`–`F6` | Soft keys: Main, Step Edit, Song, Program, Trim (sample edit), Mixer |
+| `?` | HELP (opens on the topic for the current screen) |
+| In TRIM: `H` `M` `Delete` `J` `K` `P` `T` | Chop, mark a chop, delete chop (`Cmd-Delete` clears), previous / next slice, play slice, trim to slice |
 | `Cmd-Z` / `Cmd-S` / `Cmd-Shift-S` / `Cmd-O` / `Cmd-N` | Undo / Save / Save As / Open / New |
 
 Double-press STOP to silence every voice. MIDI pad controllers: notes 36–51 play pads 1–16 of the current bank, and poly or channel aftertouch provides pressure.

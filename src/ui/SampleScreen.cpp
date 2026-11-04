@@ -21,6 +21,21 @@ public:
 
         addAndMakeVisible (wave);
         wave.onClick = [this] (int frame, const juce::ModifierKeys& mods) { waveClicked (frame, mods); };
+        wave.onDoubleClick = [this] (int frame) { addMarker (frame); };
+        wave.onMarkerDragged = [this] (int index, int frame) { moveMarker (index, frame); };
+        wave.onMarkerDragEnd = [this] { auditionSelected(); };
+
+        setupParam (sliceStart, 0, 1, 1);
+        sliceStart.textFromValueFunction = [this] (double v) {
+            auto smp = wave.getSample();
+            return smp != nullptr ? juce::String (v / smp->sampleRate * 1000.0, 1) + " ms" : juce::String ("-");
+        };
+        sliceStart.onValueChange = [this] {
+            if (! loadingSlice && selected > 0)
+                moveMarker (selected, (int) sliceStart.getValue());
+        };
+        addAndMakeVisible (sliceStart);
+        addAndMakeVisible (capSlice);
 
         setupCombo (mode, { "Threshold", "Regions", "BPM", "Manual" });
         mode.setSelectedId (1, juce::dontSendNotification);
@@ -40,7 +55,7 @@ public:
             addAndMakeVisible (comp);
 
         chopBtn.onClick = [this] { doChop(); };
-        clearBtn.onClick = [this] { markers = { 0 }; selected = -1; syncWave(); };
+        clearBtn.onClick = [this] { clearChops(); };
         previewBtn.onClick = [this] {
             if (auto s = wave.getSample())
                 ctx.engine.previewSample (s, 0, -1);
@@ -71,12 +86,38 @@ public:
             addAndMakeVisible (comp);
         hint.setFont (theme::screenFont (11.5f));
         hint.setColour (juce::Label::textColourId, theme::lcd::textDim);
-        hint.setText ("Click a slice to hear it.  Manual mode: click adds a marker, Cmd-click removes one.",
+        hint.setText ("CLICK play slice  DBL/SHIFT-CLICK add  CMD/ALT-CLICK delete  DRAG move   "
+                      "KEYS: H chop  M mark  DEL delete  J/K prev/next  T trim  ? help",
                       juce::dontSendNotification);
         updateVisibility();
     }
 
     juce::String getTitle() const override { return "SAMPLE EDIT"; }
+    juce::String getHelpTopic() const override { return "Chopping a sample"; }
+
+    bool handleKey (const juce::KeyPress& k) override
+    {
+        const auto mods = k.getModifiers();
+        const int code = k.getKeyCode();
+        const auto ch = juce::CharacterFunctions::toLowerCase (k.getTextCharacter());
+        if (code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey)
+        {
+            if (mods.isCommandDown())
+                clearChops();
+            else
+                deleteSelectedChop();
+            return true;
+        }
+        if (mods.isCommandDown())
+            return false;
+        if (ch == 'h') { doChop(); return true; }
+        if (ch == 'm') { markAtPlayhead(); return true; }
+        if (ch == 'j') { selectSlice (selected - 1); return true; }
+        if (ch == 'k') { selectSlice (selected + 1); return true; }
+        if (ch == 't') { trimToSlice(); return true; }
+        if (ch == 'p') { auditionSelected(); return true; }
+        return false;
+    }
 
     void contextChanged() override
     {
@@ -95,6 +136,8 @@ public:
             markers = { 0 };
             selected = -1;
             if (s != nullptr)
+                sliceStart.setRange (0, juce::jmax (1, s->getNumFrames() - 1), 1);
+            if (s != nullptr)
             {
                 const double est = chop::estimateLoopBpm (*s, loopBars.getSelectedId() == 1 ? 1 : loopBars.getSelectedId() == 2 ? 2 : loopBars.getSelectedId() == 3 ? 4 : 8);
                 if (est > 0)
@@ -108,7 +151,7 @@ public:
         if (s != nullptr)
             info.setText (juce::String (s->getLengthSeconds(), 3) + " s   " + juce::String (s->sampleRate / 1000.0, 1)
                               + " kHz   " + (s->buffer.getNumChannels() > 1 ? "stereo" : "mono") + "   "
-                              + juce::String ((int) markers.size()) + " slices",
+                              + juce::String ((int) markers.size()) + (markers.size() == 1 ? " slice" : " slices"),
                           juce::dontSendNotification);
         else
             info.setText ({}, juce::dontSendNotification);
@@ -130,40 +173,45 @@ public:
         auto controls = r.removeFromBottom (150);
         wave.setBounds (r.reduced (0, 4));
 
+        const float k = juce::jmin (1.0f, controls.getWidth() / 770.0f); // shrink columns on a narrow LCD
+        auto W = [k] (int w) { return (int) std::floor (w * k); };
         auto row1 = controls.removeFromTop (44);
         auto place = [] (juce::Rectangle<int>& row, Caption& cap, juce::Component& comp, int w) {
             auto cell = row.removeFromLeft (w);
-            row.removeFromLeft (8);
+            row.removeFromLeft (6);
             cap.setBounds (cell.removeFromTop (16));
             comp.setBounds (cell.withHeight (24));
         };
-        place (row1, capMode, mode, 110);
-        place (row1, capSens, sensitivity, 110);
-        place (row1, capMin, minTime, 100);
-        place (row1, capRegions, regions, 80);
-        place (row1, capBpm, bpm, 100);
-        place (row1, capBeats, beats, 90);
+        place (row1, capMode, mode, W (100));
+        place (row1, capSens, sensitivity, W (96));
+        place (row1, capMin, minTime, W (86));
+        place (row1, capRegions, regions, W (60));
+        place (row1, capBpm, bpm, W (92));
+        place (row1, capBeats, beats, W (82));
+        place (row1, capSlice, sliceStart, W (96));
         row1.removeFromTop (16);
-        chopBtn.setBounds (row1.removeFromLeft (70).withHeight (24));
+        const int bw = juce::jmax (40, (row1.getWidth() - 6) / 2);
+        chopBtn.setBounds (row1.removeFromLeft (bw).withHeight (24));
         row1.removeFromLeft (6);
-        clearBtn.setBounds (row1.removeFromLeft (60).withHeight (24));
+        clearBtn.setBounds (row1.removeFromLeft (bw).withHeight (24));
 
         controls.removeFromTop (8);
         auto row2 = controls.removeFromTop (28);
+        const int unit = (row2.getWidth() - 5 * 6) / 7;
         for (auto* b : { &previewBtn, &stopBtn, &normalizeBtn, &reverseBtn, &trimBtn, &setSliceBtn })
         {
-            b->setBounds (row2.removeFromLeft (b == &setSliceBtn ? 130 : 92));
+            b->setBounds (row2.removeFromLeft (b == &setSliceBtn ? row2.getWidth() : unit));
             row2.removeFromLeft (6);
         }
 
         controls.removeFromTop (8);
         auto row3 = controls.removeFromTop (44);
-        place (row3, capTarget, target, 120);
-        place (row3, capLoop, loopBars, 90);
+        place (row3, capTarget, target, W (110));
+        place (row3, capLoop, loopBars, W (84));
         row3.removeFromTop (16);
-        makeSeq.setBounds (row3.removeFromLeft (140).withHeight (24));
-        fitTempo.setBounds (row3.removeFromLeft (160).withHeight (24));
-        convertBtn.setBounds (row3.removeFromLeft (180).withHeight (26));
+        makeSeq.setBounds (row3.removeFromLeft (W (150)).withHeight (24));
+        fitTempo.setBounds (row3.removeFromLeft (W (180)).withHeight (24));
+        convertBtn.setBounds (row3.withHeight (26));
     }
 
 private:
@@ -182,13 +230,20 @@ private:
     {
         wave.setMarkers (markers);
         wave.setSelectedSlice (selected);
+        const juce::ScopedValueSetter<bool> svs (loadingSlice, true);
+        sliceStart.setEnabled (selected > 0);
+        if (selected >= 0 && selected < (int) markers.size())
+            sliceStart.setValue (markers[(size_t) selected], juce::dontSendNotification);
+        sliceStart.updateText();
     }
 
     void doChop()
     {
         auto s = wave.getSample();
         if (s == nullptr)
-            return;
+            return flashMsg ("No sample on this pad - load one first (see HELP)");
+        if (mode.getSelectedId() == 4)
+            return flashMsg ("Manual mode: double-click the waveform (or press M while it plays) to add chops");
         switch (mode.getSelectedId())
         {
             case 1: markers = chop::detectTransients (*s, sensitivity.getValue(), minTime.getValue()); break;
@@ -223,37 +278,122 @@ private:
         return i + 1 < (int) markers.size() ? markers[(size_t) i + 1] : (s != nullptr ? s->getNumFrames() : 0);
     }
 
+    // ---- chop editing: the same in every mode
+    //   click = select + play a slice, double/shift-click = add a marker, cmd/alt-click = delete the nearest
+    //   marker, drag a marker line = move it. Manual mode just means CHOP doesn't auto-detect.
     void waveClicked (int frame, const juce::ModifierKeys& mods)
     {
-        if (mode.getSelectedId() == 4 || mods.isAltDown())
-        {
-            if (mods.isCommandDown())
-            {
-                // remove nearest marker (never the first)
-                int best = -1, bestDist = std::numeric_limits<int>::max();
-                for (int i = 1; i < (int) markers.size(); ++i)
-                    if (std::abs (markers[(size_t) i] - frame) < bestDist)
-                    {
-                        bestDist = std::abs (markers[(size_t) i] - frame);
-                        best = i;
-                    }
-                if (best > 0)
-                    markers.erase (markers.begin() + best);
-            }
-            else if (markers.size() < (size_t) kNumPads)
-            {
-                markers.insert (std::upper_bound (markers.begin(), markers.end(), frame), frame);
-                markers.erase (std::unique (markers.begin(), markers.end()), markers.end());
-            }
-            selected = -1;
-            syncWave();
-            contextChanged();
+        if (mods.isCommandDown() || mods.isAltDown())
+            return deleteMarkerNear (frame);
+        if (mods.isShiftDown() || mode.getSelectedId() == 4)
+            return addMarker (frame);
+        selectSlice (sliceAt (frame));
+    }
+
+    void selectSlice (int i)
+    {
+        if (wave.getSample() == nullptr || markers.empty())
             return;
+        selected = juce::jlimit (0, (int) markers.size() - 1, i);
+        syncWave();
+        auditionSelected();
+    }
+
+    void auditionSelected()
+    {
+        if (auto smp = wave.getSample())
+        {
+            if (selected >= 0 && selected < (int) markers.size())
+                ctx.engine.previewSample (smp, markers[(size_t) selected], sliceEnd (selected));
+            else
+                ctx.engine.previewSample (smp, 0, -1);
         }
+    }
+
+    void addMarker (int frame)
+    {
+        auto smp = wave.getSample();
+        if (smp == nullptr)
+            return;
+        if (markers.size() >= (size_t) kNumPads)
+            return flashMsg ("Max 128 slices");
+        frame = juce::jlimit (1, smp->getNumFrames() - 1, frame);
+        markers.insert (std::upper_bound (markers.begin(), markers.end(), frame), frame);
+        markers.erase (std::unique (markers.begin(), markers.end()), markers.end());
         selected = sliceAt (frame);
         syncWave();
-        if (auto s = wave.getSample())
-            ctx.engine.previewSample (s, markers[(size_t) selected], sliceEnd (selected));
+        updateInfo();
+    }
+
+    void deleteMarkerNear (int frame)
+    {
+        int best = -1, bestDist = std::numeric_limits<int>::max();
+        for (int i = 1; i < (int) markers.size(); ++i)
+            if (std::abs (markers[(size_t) i] - frame) < bestDist)
+            {
+                bestDist = std::abs (markers[(size_t) i] - frame);
+                best = i;
+            }
+        if (best <= 0)
+            return flashMsg ("No chop to delete");
+        markers.erase (markers.begin() + best);
+        selected = juce::jmin (best - 1, (int) markers.size() - 1);
+        syncWave();
+        updateInfo();
+    }
+
+    /** DELETE: remove the selected slice's start (it merges into the slice before it). */
+    void deleteSelectedChop()
+    {
+        if (markers.size() <= 1)
+            return flashMsg ("No chops to delete");
+        int idx = selected <= 0 ? 1 : selected;
+        if (selected < 0)
+            return flashMsg ("Click a slice first (DEL removes its start marker)");
+        idx = juce::jlimit (1, (int) markers.size() - 1, idx);
+        markers.erase (markers.begin() + idx);
+        selected = idx - 1;
+        syncWave();
+        updateInfo();
+        flashMsg ("Chop deleted - " + juce::String ((int) markers.size()) + " slices");
+    }
+
+    void clearChops()
+    {
+        markers = { 0 };
+        selected = -1;
+        syncWave();
+        updateInfo();
+        flashMsg ("Chops cleared");
+    }
+
+    /** M: tap a chop at the preview playhead while it plays (or split the selected slice in half). */
+    void markAtPlayhead()
+    {
+        const int pos = ctx.engine.getPreviewPosition();
+        if (pos > 0)
+            return addMarker (pos);
+        if (selected >= 0)
+            return addMarker ((markers[(size_t) selected] + sliceEnd (selected)) / 2);
+        flashMsg ("Play the sample (P / PLAY ALL) and press M to drop chops in time");
+    }
+
+    void moveMarker (int index, int frame)
+    {
+        if (index <= 0 || index >= (int) markers.size())
+            return;
+        const int lo = markers[(size_t) index - 1] + 1;
+        const int hi = index + 1 < (int) markers.size() ? markers[(size_t) index + 1] - 1 : (wave.getSample() ? wave.getSample()->getNumFrames() - 1 : frame);
+        markers[(size_t) index] = juce::jlimit (lo, juce::jmax (lo, hi), frame);
+        selected = index;
+        syncWave();
+    }
+
+    void updateInfo() { contextChanged(); }
+    void flashMsg (const juce::String& m)
+    {
+        if (ctx.flashMessage)
+            ctx.flashMessage (m);
     }
 
     template <typename Fn>
@@ -390,6 +530,9 @@ private:
     }
 
     juce::Label title, info, hint;
+    juce::Slider sliceStart;
+    Caption capSlice { "Slice start" };
+    bool loadingSlice = false;
     Waveform wave;
     std::vector<int> markers { 0 };
     int selected = -1;

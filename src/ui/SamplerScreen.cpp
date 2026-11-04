@@ -106,6 +106,7 @@ public:
         refreshButtons();
     }
 
+    juce::String getHelpTopic() const override { return "Sampling"; }
     juce::String getTitle() const override { return "SAMPLER"; }
 
     void contextChanged() override

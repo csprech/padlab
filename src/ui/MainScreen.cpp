@@ -526,6 +526,7 @@ public:
     }
 
     juce::String getTitle() const override { return "MAIN"; }
+    juce::String getHelpTopic() const override { return "Recording a beat"; }
 
     void getLiveOverlay (double ticks, bool playing, LiveOverlay& o) override
     {

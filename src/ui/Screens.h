@@ -34,17 +34,26 @@ public:
     void setEmptyText (const juce::String& t) { emptyText = t; repaint(); }
 
     std::function<void (int frame, const juce::ModifierKeys&)> onClick;
+    std::function<void (int frame)> onDoubleClick;
+    /** A marker line was dragged (index >= 1; the first marker stays at 0). */
+    std::function<void (int markerIndex, int frame)> onMarkerDragged;
+    std::function<void()> onMarkerDragEnd;
 
     void paint (juce::Graphics&) override;
     void resized() override { rebuild(); }
     void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+    void mouseMove (const juce::MouseEvent& e) override;
 
 private:
     void rebuild();
     SamplePtr sample;
     std::vector<int> markers;
     std::vector<std::pair<float, float>> peaks;
-    int regionStart = -1, regionEnd = -1, selectedSlice = -1, playhead = -1;
+    int markerNear (int x) const; // index of a draggable marker within a few pixels, or -1
+    int regionStart = -1, regionEnd = -1, selectedSlice = -1, playhead = -1, dragging = -1;
     juce::String emptyText { "No sample on this pad - drop a file on a pad or record one in SAMPLER" };
 };
 
@@ -77,6 +86,10 @@ public:
         std::vector<Meter> meters;
     };
     virtual void getLiveOverlay (double /*ticks*/, bool /*playing*/, LiveOverlay&) {}
+    /** Screen-specific hotkeys, offered before the global ones (never pad keys). */
+    virtual bool handleKey (const juce::KeyPress&) { return false; }
+    /** Which HELP topic to open when HELP is pressed on this screen. */
+    virtual juce::String getHelpTopic() const { return "Quick start"; }
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
         if (isShowing())
@@ -100,6 +113,8 @@ std::unique_ptr<Screen> createMixerScreen (AppContext&);
 std::unique_ptr<Screen> createSongScreen (AppContext&);
 std::unique_ptr<Screen> createStepEditScreen (AppContext&);
 std::unique_ptr<Screen> createOtherScreen (AppContext&);
+std::unique_ptr<Screen> createHelpScreen (AppContext&);
+void helpOpenTopic (Screen& help, const juce::String& topic);
 /** Panel STEP < > while STEP EDIT is showing. */
 void stepEditStep (Screen&, int direction);
 

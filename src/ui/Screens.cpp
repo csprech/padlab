@@ -144,10 +144,57 @@ void Waveform::paint (juce::Graphics& g)
     }
 }
 
+int Waveform::markerNear (int x) const
+{
+    int best = -1, bestDist = 6; // pixels
+    for (int i = 1; i < (int) markers.size(); ++i)
+        if (const int d = std::abs (xFor (markers[(size_t) i]) - x); d <= bestDist)
+        {
+            bestDist = d;
+            best = i;
+        }
+    return best;
+}
+
+void Waveform::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (markerNear (e.x) > 0 && ! e.mods.isAnyModifierKeyDown() ? juce::MouseCursor::LeftRightResizeCursor
+                                                                            : juce::MouseCursor::NormalCursor);
+}
+
 void Waveform::mouseDown (const juce::MouseEvent& e)
 {
-    if (onClick && sample != nullptr)
+    if (sample == nullptr)
+        return;
+    dragging = -1;
+    // grab a marker line to move it (plain click right on a marker)
+    if (! e.mods.isAnyModifierKeyDown() && e.getNumberOfClicks() == 1)
+        if (const int m = markerNear (e.x); m > 0 && onMarkerDragged)
+        {
+            dragging = m;
+            return;
+        }
+    if (onClick && e.getNumberOfClicks() == 1)
         onClick (frameAt (e.x), e.mods);
+}
+
+void Waveform::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging > 0 && onMarkerDragged && sample != nullptr)
+        onMarkerDragged (dragging, juce::jlimit (0, sample->getNumFrames() - 1, frameAt (e.x)));
+}
+
+void Waveform::mouseUp (const juce::MouseEvent&)
+{
+    if (dragging > 0 && onMarkerDragEnd)
+        onMarkerDragEnd();
+    dragging = -1;
+}
+
+void Waveform::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (onDoubleClick && sample != nullptr)
+        onDoubleClick (frameAt (e.x));
 }
 
 } // namespace padlab

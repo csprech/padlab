@@ -53,6 +53,7 @@ private:
     void locateBar (int dir);
     void openWindow();
     void showDiskMenu();
+    void showHelp();
     Screen& activeScreen() { return *screens[(size_t) ctx.screen]; }
     bool shiftActive() const;
 
@@ -173,6 +174,7 @@ private:
     Entry entry = Entry::None;
     juce::String entryDigits;
 
+    theme::HardButton helpBtn { "HELP", theme::colours::ledRed, Cap::Light };
     theme::HardButton mainScreenBtn { "MAIN\nSCREEN", theme::colours::ledRed, Cap::Light },
         openWindowBtn { "OPEN\nWINDOW", theme::colours::ledRed, Cap::Light };
     theme::HardButton tapBtn { "TAP TEMPO\nNOTE REPEAT", theme::colours::ledRed, Cap::Light },

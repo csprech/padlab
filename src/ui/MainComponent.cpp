@@ -43,6 +43,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     screens[(size_t) ScreenMode::Song] = createSongScreen (ctx);
     screens[(size_t) ScreenMode::StepEdit] = createStepEditScreen (ctx);
     screens[(size_t) ScreenMode::Other] = createOtherScreen (ctx);
+    screens[(size_t) ScreenMode::Help] = createHelpScreen (ctx);
     for (auto& s : screens)
     {
         s->setLookAndFeel (&lcdLnf);
@@ -321,6 +322,12 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     for (auto* b : { &padBankBtn, &fullLevel, &sixteenLevels, &trackMute, &padMute })
         addAndMakeVisible (b);
 
+    helpBtn.setHasLed (false);
+    helpBtn.setLegendLines (1);
+    helpBtn.setTooltip ("How to load pads, chop, record, make songs... (or press ?)");
+    helpBtn.onClick = [this] { showHelp(); };
+    addAndMakeVisible (helpBtn);
+
     floppy.onClick = [this] { showDiskMenu(); };
     floppy.setTooltip ("DISK: new, open, save, audio/MIDI setup");
     addAndMakeVisible (floppy);
@@ -528,6 +535,7 @@ void MainComponent::resized()
         auto tr = topRightArea;
         auto fl = tr.removeFromLeft ((int) (tr.getWidth() * 0.40f));
         floppy.setBounds (fl.withTrimmedTop (6).withHeight (58).reduced (2, 0));
+        helpBtn.setBounds (fl.withTrimmedTop (70).withHeight (48).withSizeKeepingCentre (90, 48).withX (fl.getX()));
         tr.removeFromLeft (18);
         ventArea = tr.removeFromTop (66).withTrimmedTop (6);
         badgeArea = tr;
@@ -782,8 +790,19 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
 
 // ---------------------------------------------------------------- screens / state
 
+void MainComponent::showHelp()
+{
+    if (ctx.screen == ScreenMode::Help)
+        return showScreen (ctx.previousScreen);
+    const auto topic = activeScreen().getHelpTopic();
+    showScreen (ScreenMode::Help);
+    helpOpenTopic (activeScreen(), topic);
+}
+
 void MainComponent::showScreen (ScreenMode m)
 {
+    if (m == ScreenMode::Help && ctx.screen != ScreenMode::Help)
+        ctx.previousScreen = ctx.screen;
     ctx.screen = m;
     for (size_t i = 0; i < screens.size(); ++i)
         screens[i]->setVisible ((int) i == (int) m);
@@ -1332,6 +1351,17 @@ void MainComponent::showDiskMenu()
 bool MainComponent::keyPressed (const juce::KeyPress& k)
 {
     const auto mods = k.getModifiers();
+    // don't steal typing from text fields
+    if (dynamic_cast<juce::TextEditor*> (getCurrentlyFocusedComponent()) != nullptr)
+        return false;
+    // the screen's own hotkeys first (e.g. chop editing in TRIM)
+    if (activeScreen().isVisible() && activeScreen().handleKey (k))
+        return true;
+    if (k.getTextCharacter() == '?' || (mods.isCommandDown() && k.getKeyCode() == '/'))
+    {
+        showHelp();
+        return true;
+    }
     if (mods.isCommandDown())
     {
         const auto c = juce::CharacterFunctions::toLowerCase (k.getTextCharacter());

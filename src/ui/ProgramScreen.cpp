@@ -105,6 +105,7 @@ public:
         addAndMakeVisible (clearPad);
     }
 
+    juce::String getHelpTopic() const override { return "Loading sounds onto pads"; }
     juce::String getTitle() const override { return "PROGRAM EDIT"; }
 
     void contextChanged() override

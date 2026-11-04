@@ -6,8 +6,8 @@
 namespace padlab
 {
 enum class PadView { Play, TrackMute, PadMute };
-enum class ScreenMode { Main, Program, SampleEdit, Sampler, Mixer, Song, StepEdit, Other };
-constexpr int kNumScreens = 8;
+enum class ScreenMode { Main, Program, SampleEdit, Sampler, Mixer, Song, StepEdit, Other, Help };
+constexpr int kNumScreens = 9;
 
 /** UI-wide state shared by all screens. Listeners get a change message whenever it changes. */
 struct AppContext : juce::ChangeBroadcaster
@@ -18,6 +18,7 @@ struct AppContext : juce::ChangeBroadcaster
     int selectedPad = 0; // absolute 0..127
     PadView padView = PadView::Play;
     ScreenMode screen = ScreenMode::Main;
+    ScreenMode previousScreen = ScreenMode::Main; // where HELP returns to
     juce::File projectFolder;
     std::function<void (ScreenMode)> showScreen;
     std::function<void (const juce::String&)> flashMessage;

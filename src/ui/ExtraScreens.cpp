@@ -225,6 +225,7 @@ public:
     }
 
     juce::String getTitle() const override { return "SONG"; }
+    juce::String getHelpTopic() const override { return "Songs"; }
 
     void visibilityChanged() override
     {
@@ -518,6 +519,7 @@ public:
     }
 
     juce::String getTitle() const override { return "STEP EDIT"; }
+    juce::String getHelpTopic() const override { return "Step edit"; }
 
     void visibilityChanged() override
     {
@@ -829,6 +831,7 @@ public:
     }
 
     juce::String getTitle() const override { return "OTHER"; }
+    juce::String getHelpTopic() const override { return "Note variation"; }
 
     void resized() override
     {

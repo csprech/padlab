@@ -117,6 +117,7 @@ public:
         };
     }
 
+    juce::String getHelpTopic() const override { return "Programs and mixing"; }
     juce::String getTitle() const override { return "MIXER"; }
 
     void getLiveOverlay (double, bool, LiveOverlay& o) override

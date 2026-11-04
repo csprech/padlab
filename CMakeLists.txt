@@ -58,6 +58,7 @@ target_sources(Padlab PRIVATE
   src/ui/SamplerScreen.cpp
   src/ui/MixerScreen.cpp
   src/ui/ExtraScreens.cpp
+  src/ui/HelpScreen.cpp
   src/ui/MainComponent.cpp
   src/Main.cpp)
 
