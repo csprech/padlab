@@ -260,11 +260,14 @@ juce::Image knob (int d, float angle)
 juce::Image paintTile (juce::Colour baseColour, int size, float roughness, uint32_t seed)
 {
     const Rgb base = toRgb (baseColour);
-    const int p1 = size / 2, p2 = size / 6;
+    // lattice periods must divide the tile so it repeats seamlessly (size is a multiple of 30)
+    const int pFine = (int) (size / 1.5f), pMid = (int) (size / 2.5f), pWide = size / 5;
     auto heightFn = [=] (float x, float y) {
         auto wx = std::fmod (x + size, (float) size), wy = std::fmod (y + size, (float) size);
-        // fine "orange peel": mostly 6 px undulation, a little 2 px grit
-        return roughness * (0.12f * valueNoise (wx / 2.0f, wy / 2.0f, seed, p1) + 0.55f * valueNoise (wx / 6.0f, wy / 6.0f, seed + 1, p2));
+        // tight powder-coat "orange peel": fine grit and a 2-3 px peel, only a trace of wider wave
+        return roughness * (0.16f * valueNoise (wx / 1.5f, wy / 1.5f, seed, pFine)
+                            + 0.14f * valueNoise (wx / 2.5f, wy / 2.5f, seed + 1, pMid)
+                            + 0.05f * valueNoise (wx / 5.0f, wy / 5.0f, seed + 2, pWide));
     };
     auto albedo = [=] (float x, float y) {
         const int ix = ((int) x) % size, iy = ((int) y) % size;
