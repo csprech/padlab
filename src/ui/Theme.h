@@ -14,16 +14,16 @@ namespace padlab::theme
 /** Hardware (panel) palette. */
 namespace colours
 {
-    const juce::Colour chassis     { 0xffaaa79f };
-    const juce::Colour chassisLow  { 0xff99968e };
+    const juce::Colour chassis     { 0xffcfcbbc };
+    const juce::Colour chassisLow  { 0xffbfbaab };
     const juce::Colour deck        { 0xff8b9399 }; // blue-grey pad plate
-    const juce::Colour seam        { 0xff6b6862 };
+    const juce::Colour seam        { 0xff8a867c };
     const juce::Colour bezel       { 0xff2a2a28 };
     const juce::Colour silk        { 0xff272624 }; // printed text on the light chassis
     const juce::Colour silkLight   { 0xfff2f0ea }; // printed text on dark parts
     const juce::Colour rubber      { 0xff7b7b78 }; // pads
-    const juce::Colour keyLight    { 0xffd8d4c8 };
-    const juce::Colour keyWhite    { 0xffeceae2 };
+    const juce::Colour keyLight    { 0xffe9e6dd };
+    const juce::Colour keyWhite    { 0xfff4f2ed };
     const juce::Colour keyBlue     { 0xff8b9ea9 };
     const juce::Colour keyDark     { 0xff5f5d59 };
     const juce::Colour keyRed      { 0xffc8443a };
@@ -36,7 +36,7 @@ namespace colours
     const juce::Colour body     = chassis;
     const juce::Colour bodyEdge = bezel;
     const juce::Colour text     = silk;
-    const juce::Colour textDim  = juce::Colour (0xff5d5a54);
+    const juce::Colour textDim  = juce::Colour (0xff6e6a62);
     const juce::Colour accent   = ledAmber;
     const juce::Colour accent2  = ledGreen;
     const juce::Colour record   = ledRed;

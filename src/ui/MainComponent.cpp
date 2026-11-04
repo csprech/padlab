@@ -420,11 +420,11 @@ void MainComponent::renderBackground (juce::Graphics& g, float sc)
     // ---- chassis: powder-coated steel lit from the top-left
     g.setFillType (tileFill (colours::chassis, 7));
     g.fillAll();
-    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.16f), 0, 0, juce::Colours::transparentWhite,
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.07f), 0, 0, juce::Colours::transparentWhite,
                                              bounds.getWidth() * 0.7f, bounds.getHeight() * 0.8f, true));
     g.fillAll();
     g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, 0, bounds.getHeight() * 0.35f,
-                                             juce::Colours::black.withAlpha (0.16f), 0, bounds.getBottom(), false));
+                                             juce::Colours::black.withAlpha (0.10f), 0, bounds.getBottom(), false));
     g.fillAll();
     // rounded case edge
     chamfer (g, bounds, 5.0f, false);

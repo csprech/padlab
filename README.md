@@ -7,7 +7,7 @@ C++20 / JUCE 8, macOS (Apple Silicon tested). The core is platform-neutral.
 ## Look
 
 The look is modelled on a classic 90s hardware sampler, with no third-party logos or panel artwork:
-- Warm grey powder-coated chassis, screws and silkscreened section labels (DIN Condensed).
+- Light cream powder-coated chassis, screws and silkscreened section labels (DIN Condensed).
 - Flat, matte grey rubber pads set into a blue-grey plate, with their labels and status LEDs printed above them. They give slightly when struck. The most-played pads (bottom row) and keys (PLAY, STOP, REC) are polished from wear.
 - Low, flat moulded keys (red REC/OVERDUB, white transport, blue-grey mode keys). Legends and LED dots are printed on the panel above each key.
 - A cream **DATA wheel** with a finger dimple, in a black collar. Knurled Q-Link knobs.
