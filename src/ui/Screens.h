@@ -114,6 +114,7 @@ std::unique_ptr<Screen> createSongScreen (AppContext&);
 std::unique_ptr<Screen> createStepEditScreen (AppContext&);
 std::unique_ptr<Screen> createOtherScreen (AppContext&);
 std::unique_ptr<Screen> createHelpScreen (AppContext&);
+std::unique_ptr<Screen> createEditScreen (AppContext&);
 void helpOpenTopic (Screen& help, const juce::String& topic);
 /** Panel STEP < > while STEP EDIT is showing. */
 void stepEditStep (Screen&, int direction);

@@ -67,7 +67,7 @@ public:
         setSliceBtn.onClick = [this] { applySliceToPad(); };
 
         juce::StringArray progs;
-        for (int i = 0; i < kNumTracks; ++i)
+        for (int i = 0; i < kNumPrograms; ++i)
             progs.add ("Program " + juce::String (i + 1));
         setupCombo (target, progs);
         target.setSelectedId (2, juce::dontSendNotification);

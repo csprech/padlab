@@ -11,27 +11,6 @@ bool Pad::hasSample() const
     return false;
 }
 
-Track::Track() { events.reserve (kEventCapacity); }
-
-Track::Track (const Track& other)
-    : name (other.name), programIndex (other.programIndex), mute (other.mute), solo (other.solo)
-{
-    events.reserve (kEventCapacity);
-    events = other.events;
-}
-
-Track& Track::operator= (const Track& other)
-{
-    name = other.name;
-    programIndex = other.programIndex;
-    mute = other.mute;
-    solo = other.solo;
-    if (events.capacity() < (size_t) kEventCapacity)
-        events.reserve (kEventCapacity);
-    events = other.events; // capacity is preserved by vector copy-assignment when large enough
-    return *this;
-}
-
 void Track::insertSorted (const NoteEvent& e)
 {
     if (isFull())
@@ -39,6 +18,14 @@ void Track::insertSorted (const NoteEvent& e)
     auto it = std::upper_bound (events.begin(), events.end(), e.tick,
                                 [] (int64_t t, const NoteEvent& ev) { return t < ev.tick; });
     events.insert (it, e);
+}
+
+bool Track::insertSortedNoAlloc (const NoteEvent& e)
+{
+    if (! canRecord())
+        return false;
+    insertSorted (e); // size < capacity, so vector::insert doesn't reallocate
+    return true;
 }
 
 bool Sequence::anySolo() const
@@ -55,10 +42,10 @@ Project::Project()
         {
             auto& tr = sequences[(size_t) s].tracks[(size_t) t];
             tr.name = "Track " + juce::String (t + 1);
-            tr.programIndex = t;
+            tr.programIndex = t % kNumPrograms;
         }
     }
-    for (int p = 0; p < kNumTracks; ++p)
+    for (int p = 0; p < kNumPrograms; ++p)
         programs[(size_t) p].name = "Program " + juce::String (p + 1);
 }
 

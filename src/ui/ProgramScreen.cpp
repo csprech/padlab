@@ -72,6 +72,8 @@ public:
         param (release, capRelease, 1, 5000, 1, " ms", 200, [] (Pad& p, double v) { p.releaseMs = (float) v; });
         param (cutoff, capCutoff, 20, 20000, 1, " Hz", 1000, [] (Pad& p, double v) { p.cutoffHz = (float) v; });
         param (reso, capReso, 0, 100, 1, " %", 0, [] (Pad& p, double v) { p.resonance = (float) v / 100.0f; });
+        param (revSend, capRevSend, 0, 100, 1, " %", 0, [] (Pad& p, double v) { p.reverbSend = (float) v / 100.0f; });
+        param (dlySend, capDlySend, 0, 100, 1, " %", 0, [] (Pad& p, double v) { p.delaySend = (float) v / 100.0f; });
 
         setupCombo (filter, { "Off", "Low pass", "High pass", "Band pass" });
         filter.onChange = [this] { edit ([v = filter.getSelectedId() - 1] (Program&, Pad& p) { p.filter = (FilterType) v; }); };
@@ -143,6 +145,8 @@ public:
             release.setValue (pad.releaseMs, juce::dontSendNotification);
             cutoff.setValue (pad.cutoffHz, juce::dontSendNotification);
             reso.setValue (pad.resonance * 100.0, juce::dontSendNotification);
+            revSend.setValue (pad.reverbSend * 100.0, juce::dontSendNotification);
+            dlySend.setValue (pad.delaySend * 100.0, juce::dontSendNotification);
             filter.setSelectedId ((int) pad.filter + 1, juce::dontSendNotification);
             muteGroup.setSelectedId (pad.muteGroup + 1, juce::dontSendNotification);
             trigger.setSelectedId ((int) pad.trigger + 1, juce::dontSendNotification);
@@ -215,6 +219,8 @@ public:
         cell (2, 2, capReso, reso);
         cell (3, 2, capTrigger, trigger);
         cell (0, 3, capMuteGroup, muteGroup);
+        cell (1, 3, capRevSend, revSend);
+        cell (2, 3, capDlySend, dlySend);
     }
 
 private:
@@ -294,7 +300,8 @@ private:
     std::array<LayerRow, kNumLayers> layers;
     Caption capLayerSample { "Layer sample" }, capVel { "Velocity range" }, capLTune { "Tune" }, capLLevel { "Level" },
         capLPan { "Pan" };
-    juce::Slider level, pan, tune, attack, decay, sustain, release, cutoff, reso;
+    juce::Slider level, pan, tune, attack, decay, sustain, release, cutoff, reso, revSend, dlySend;
+    Caption capRevSend { "Reverb send" }, capDlySend { "Delay send" };
     Caption capLevel { "Pad level" }, capPan { "Pad pan" }, capTune { "Pad tune" }, capAttack { "Attack" },
         capDecay { "Decay" }, capSustain { "Sustain" }, capRelease { "Release" }, capCutoff { "Cutoff" },
         capReso { "Resonance" }, capFilter { "Filter" }, capMuteGroup { "Mute group (choke)" },

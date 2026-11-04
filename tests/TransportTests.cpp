@@ -17,7 +17,8 @@ struct Harness
     static constexpr double sr = 48000.0;
     static constexpr int block = 512;
 
-    Project project;
+    std::unique_ptr<Project> projectStore = std::make_unique<Project>(); // ~1 MB: not on the stack
+    Project& project = *projectStore;
     PerformanceSettings settings;
     Transport transport;
     ActionList actions;
@@ -33,6 +34,10 @@ struct Harness
         auto& seq = project.sequences[0];
         seq.bpm = 120.0; // 0.04 ticks per sample -> 25 samples per tick
         seq.bars = 1;
+        // the engine reserves room on the track being recorded; do the same here
+        for (int s = 0; s < 2; ++s)
+            for (int t = 0; t < 3; ++t)
+                project.sequences[(size_t) s].tracks[(size_t) t].events.reserve (kEventCapacity);
     }
 
     void input (int64_t atSample, LiveInput::Type type, int pad, int value = 100)
@@ -355,6 +360,64 @@ struct TransportTests : juce::UnitTest
             h.run (barSamples);
             expectEquals ((int) h.events().size(), 1);
             expectEquals ((int) h.triggersOf (1).size(), 0);
+        }
+        {
+            beginTest ("loop to bar: after the first pass, playback loops from that bar");
+            Harness h;
+            auto& seq = h.project.sequences[0];
+            seq.bars = 3;
+            seq.loopToBar = 1; // bars 2-3 loop
+            h.addEvent (0, 0, 20);                 // bar 1
+            h.addEvent (0, 3840, 21);              // bar 2
+            h.transport.play (true, false);
+            h.run (barSamples * 5 + 10);
+            const auto b1 = h.triggersOf (20), b2 = h.triggersOf (21);
+            expectEquals ((int) b1.size(), 1, "bar 1 plays once");
+            expectEquals ((int) b2.size(), 3, "bar 2 on every pass");
+            if (b2.size() == 3)
+            {
+                expect (near (b2[0], barSamples) && near (b2[1], 3 * barSamples) && near (b2[2], 5 * barSamples));
+            }
+        }
+        {
+            beginTest ("loop off: the sequence plays once and stops");
+            Harness h;
+            h.project.sequences[0].loop = false;
+            h.addEvent (0, 0, 20);
+            h.transport.play (true, false);
+            h.run (barSamples * 3);
+            expectEquals ((int) h.triggersOf (20).size(), 1);
+            expect (h.transport.getState() == Transport::State::Stopped);
+        }
+        {
+            beginTest ("recording just before the loop end lands on the loop-to bar");
+            Harness h;
+            auto& seq = h.project.sequences[0];
+            seq.bars = 2;
+            seq.loopToBar = 1;
+            h.settings.timingCorrect = 3; // 1/16
+            h.transport.armRecord (RecordMode::Overdub);
+            h.transport.play (true, false);
+            // second pass of the loop (bar 2 again) ends at 3 bars of time; hit 10 ticks before it
+            h.input (3 * barSamples - 10 * samplesPerTick, LiveInput::PadDown, 4);
+            h.run (3 * barSamples + 1000);
+            bool found = false;
+            for (auto& e : h.events())
+                if (e.pad == 4)
+                    found = e.tick == 3840; // start of bar 2, not bar 1
+            expect (found, "snapped forward into the loop start");
+        }
+        {
+            beginTest ("recording never allocates: no reserved room means the hit plays but isn't recorded");
+            Harness h;
+            h.project.sequences[0].tracks[5].events.shrink_to_fit();
+            h.settings.currentTrack = 5;
+            h.transport.armRecord (RecordMode::Overdub);
+            h.transport.play (true, false);
+            h.input (1000, LiveInput::PadDown, 2);
+            h.run (5000);
+            expectEquals ((int) h.triggersOf (2).size(), 1);
+            expect (h.project.sequences[0].tracks[5].events.empty());
         }
         {
             beginTest ("timing shift moves recorded notes after timing correct");

@@ -10,6 +10,7 @@
 //  * Samples removed from the project are "retired" and only freed on the message
 //    thread once no voice references them, so the audio thread never frees memory.
 
+#include "core/Effects.h"
 #include "core/MidiClock.h"
 #include "core/Project.h"
 #include "core/Sampler.h"
@@ -67,6 +68,8 @@ public:
     void stop();
     void setRecord (RecordMode mode);
     void queueSequence (int index);
+    /** Reserves recording room on a track (message thread; swaps storage in without allocating under the lock). */
+    void ensureRecordable (int sequence, int track);
     void locate (int64_t tick);
     void panic();
 
@@ -208,6 +211,11 @@ private:
     // MIDI clock: the audio thread publishes where the transport is; a 1 ms timer thread sends clock
     std::atomic<bool> sendMidiClock { false };
     std::atomic<double> uiRunningTicks { 0.0 }, uiRunStampMs { 0.0 }, uiTicksPerMs { 1.0 }, uiPlayStartTick { 0.0 };
+    struct MidiOut // a timestamped MIDI message from the audio thread
+    {
+        double timeMs = 0.0;
+        uint8_t bytes[3] {};
+    };
     struct ClockSender : juce::HighResolutionTimer
     {
         explicit ClockSender (Engine& e) : engine (e) {}
@@ -215,8 +223,29 @@ private:
         Engine& engine;
         MidiClock clock;
         std::vector<MidiClock::Event> events;
+        std::vector<MidiOut> pendingNotes; // drained from midiOutFifo, sent when due
         bool active = false;
     };
+    // MIDI note output: the audio thread queues timestamped messages, the clock thread sends them on time
+    Fifo<MidiOut, 4096> midiOutFifo;
+    struct PendingOff
+    {
+        bool active = false;
+        int samplesLeft = 0;
+        uint8_t channel = 1, note = 0;
+    };
+    std::array<PendingOff, 512> pendingOffs {};
+    std::atomic<double> uiOutputLatencyMs { 0.0 };
+    double blockStartMs = 0.0, blockLatencyMs = 0.0;
+    void queueMidi (int offset, uint8_t status, uint8_t d1, uint8_t d2);
+    void midiNoteOn (int offset, int channel, int note, int velocity, int releaseAfterSamples);
+    void midiNoteOff (int offset, int channel, int note);
+    void flushPendingOffs (int offset);
+    void advancePendingOffs (int numSamples);
+
+    Effects effects;
+    int lastTransportState = 0;
+
     juce::CriticalSection clockOutLock;
     std::unique_ptr<juce::MidiOutput> clockOut; // guarded by clockOutLock
     juce::String clockOutId;

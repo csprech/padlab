@@ -30,6 +30,16 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
     set (root, "name", p.name);
     set (root, "masterLevelDb", p.masterLevelDb);
     set (root, "vintageMode", p.vintageMode);
+    {
+        auto fx = obj();
+        set (fx, "reverbSize", p.fx.reverbSize);
+        set (fx, "reverbDamping", p.fx.reverbDamping);
+        set (fx, "reverbReturnDb", p.fx.reverbReturnDb);
+        set (fx, "delayDivision", p.fx.delayDivision);
+        set (fx, "delayFeedback", p.fx.delayFeedback);
+        set (fx, "delayReturnDb", p.fx.delayReturnDb);
+        set (root, "fx", fx);
+    }
 
     juce::Array<juce::var> samples;
     for (auto& s : p.samplePool)
@@ -73,6 +83,8 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
             set (pd, "trigger", (int) pad.trigger);
             set (pd, "poly", (int) pad.poly);
             set (pd, "mute", pad.mute);
+            set (pd, "reverbSend", pad.reverbSend);
+            set (pd, "delaySend", pad.delaySend);
             juce::Array<juce::var> layers;
             for (auto& l : pad.layers)
             {
@@ -96,6 +108,7 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
     set (root, "programs", programs);
 
     juce::Array<juce::var> seqs;
+    const auto defaults = std::make_unique<Project>(); // ~1 MB: keep it off the stack
     for (auto& seq : p.sequences)
     {
         auto so = obj();
@@ -103,10 +116,21 @@ juce::var toJson (const Project& p, const std::map<const Sample*, juce::String>&
         set (so, "bpm", seq.bpm);
         set (so, "bars", seq.bars);
         set (so, "beatsPerBar", seq.beatsPerBar);
+        set (so, "loop", seq.loop);
+        set (so, "loopToBar", seq.loopToBar);
         juce::Array<juce::var> tracks;
-        for (auto& t : seq.tracks)
+        for (int ti = 0; ti < kNumTracks; ++ti)
         {
+            const auto& t = seq.tracks[(size_t) ti];
+            const auto& d = defaults->sequences[0].tracks[(size_t) ti];
+            // only tracks that are used or set up (64 x 99 would be a lot of empty objects)
+            if (t.events.empty() && t.name == d.name && t.programIndex == d.programIndex && ! t.mute && ! t.solo
+                && t.midiChannel == 0 && t.internalSound)
+                continue;
             auto to = obj();
+            set (to, "index", ti);
+            set (to, "midiChannel", t.midiChannel);
+            set (to, "internal", t.internalSound);
             set (to, "name", t.name);
             set (to, "program", t.programIndex);
             set (to, "mute", t.mute);
@@ -160,10 +184,20 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
         return false;
     }
 
-    Project p;
+    auto fresh = std::make_unique<Project>(); // ~1 MB: keep it off the stack
+    auto& p = *fresh;
     p.name = get (json, "name", "Untitled").toString();
     p.masterLevelDb = (float) get (json, "masterLevelDb", 0.0);
     p.vintageMode = juce::jlimit (0, 2, (int) get (json, "vintageMode", 0));
+    if (auto fx = get (json, "fx"); fx.isObject())
+    {
+        p.fx.reverbSize = (float) get (fx, "reverbSize", p.fx.reverbSize);
+        p.fx.reverbDamping = (float) get (fx, "reverbDamping", p.fx.reverbDamping);
+        p.fx.reverbReturnDb = (float) get (fx, "reverbReturnDb", p.fx.reverbReturnDb);
+        p.fx.delayDivision = (int) get (fx, "delayDivision", p.fx.delayDivision);
+        p.fx.delayFeedback = (float) get (fx, "delayFeedback", p.fx.delayFeedback);
+        p.fx.delayReturnDb = (float) get (fx, "delayReturnDb", p.fx.delayReturnDb);
+    }
 
     if (auto* samples = get (json, "samples").getArray())
         for (auto& so : *samples)
@@ -180,7 +214,7 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
         }
 
     if (auto* programs = get (json, "programs").getArray())
-        for (int pi = 0; pi < std::min (programs->size(), kNumTracks); ++pi)
+        for (int pi = 0; pi < std::min (programs->size(), kNumPrograms); ++pi)
         {
             const auto& po = programs->getReference (pi);
             auto& prog = p.programs[(size_t) pi];
@@ -208,6 +242,8 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
                     pad.trigger = (TriggerMode) juce::jlimit (0, 1, (int) get (pd, "trigger", 0));
                     pad.poly = (PolyMode) juce::jlimit (0, 1, (int) get (pd, "poly", 0));
                     pad.mute = (bool) get (pd, "mute", false);
+                    pad.reverbSend = (float) get (pd, "reverbSend", 0.0);
+                    pad.delaySend = (float) get (pd, "delaySend", 0.0);
                     if (auto* layers = get (pd, "layers").getArray())
                         for (int li = 0; li < std::min (layers->size(), kNumLayers); ++li)
                         {
@@ -233,15 +269,22 @@ bool fromJson (const juce::var& json, Project& out, const juce::File& samplesDir
             auto& seq = p.sequences[(size_t) si];
             seq.name = get (so, "name", seq.name).toString();
             seq.bpm = juce::jlimit (30.0, 300.0, (double) get (so, "bpm", 90.0));
-            seq.bars = juce::jlimit (1, 64, (int) get (so, "bars", 2));
+            seq.bars = juce::jlimit (1, kMaxBars, (int) get (so, "bars", 2));
             seq.beatsPerBar = juce::jlimit (1, 16, (int) get (so, "beatsPerBar", 4));
+            seq.loop = (bool) get (so, "loop", true);
+            seq.loopToBar = juce::jlimit (0, seq.bars - 1, (int) get (so, "loopToBar", 0));
             if (auto* tracks = get (so, "tracks").getArray())
-                for (int ti = 0; ti < std::min (tracks->size(), kNumTracks); ++ti)
+                for (int pos = 0; pos < tracks->size(); ++pos)
                 {
-                    const auto& to = tracks->getReference (ti);
+                    const auto& to = tracks->getReference (pos);
+                    const int ti = (int) get (to, "index", pos); // older files list every track in order
+                    if (ti < 0 || ti >= kNumTracks)
+                        continue;
                     auto& t = seq.tracks[(size_t) ti];
                     t.name = get (to, "name", t.name).toString();
-                    t.programIndex = juce::jlimit (0, kNumTracks - 1, (int) get (to, "program", ti));
+                    t.programIndex = juce::jlimit (0, kNumPrograms - 1, (int) get (to, "program", ti % kNumPrograms));
+                    t.midiChannel = juce::jlimit (0, 16, (int) get (to, "midiChannel", 0));
+                    t.internalSound = (bool) get (to, "internal", true);
                     t.mute = (bool) get (to, "mute", false);
                     t.solo = (bool) get (to, "solo", false);
                     t.events.clear();

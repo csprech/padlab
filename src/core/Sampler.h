@@ -21,7 +21,8 @@ public:
     /** Note-off for held live pads (Note-On trigger mode only). */
     void release (int track, int pad);
 
-    /** Mix all active voices into per-track stereo buffers (channels 2t, 2t+1). */
+    /** Mix all active voices into per-track stereo buffers (channels 2t, 2t+1). If the buffer has
+        kMixChannels channels, pad sends also go to the reverb / delay buses after the tracks. */
     void render (juce::AudioBuffer<float>& trackBuffers, int startSample, int numSamples);
 
     void killAll();
@@ -37,6 +38,7 @@ private:
         double pos = 0.0, inc = 1.0;
         int endFrame = 0;
         float gainL = 1.0f, gainR = 1.0f;
+        float reverbSend = 0.0f, delaySend = 0.0f;
         juce::ADSR env;
         bool oneShot = true;
         int releaseCountdown = -1;

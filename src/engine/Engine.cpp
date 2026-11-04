@@ -41,7 +41,7 @@ Engine::Engine()
             }
     clockSender = std::make_unique<ClockSender> (*this);
     clockSender->startTimer (1);
-    startTimer (500);
+    startTimer (100);
 }
 
 Engine::~Engine()
@@ -96,8 +96,95 @@ void Engine::retire (SamplePtr s)
         graveyard.push_back (std::move (s));
 }
 
+// ---------------------------------------------------------------- MIDI note output (audio thread side)
+
+void Engine::queueMidi (int offset, uint8_t status, uint8_t d1, uint8_t d2)
+{
+    MidiOut m;
+    m.timeMs = blockStartMs + blockLatencyMs + offset / sampleRate.load() * 1000.0;
+    m.bytes[0] = status;
+    m.bytes[1] = d1;
+    m.bytes[2] = d2;
+    midiOutFifo.push (m);
+}
+
+void Engine::midiNoteOff (int offset, int channel, int note)
+{
+    for (auto& p : pendingOffs)
+        if (p.active && p.channel == channel && p.note == note)
+            p.active = false;
+    queueMidi (offset, (uint8_t) (0x80 | ((channel - 1) & 15)), (uint8_t) juce::jlimit (0, 127, note), 0);
+}
+
+void Engine::midiNoteOn (int offset, int channel, int note, int velocity, int releaseAfter)
+{
+    note = juce::jlimit (0, 127, note);
+    // the same note still sounding: end it first so the receiver sees a clean retrigger
+    for (auto& p : pendingOffs)
+        if (p.active && p.channel == channel && p.note == note)
+        {
+            p.active = false;
+            queueMidi (offset, (uint8_t) (0x80 | ((channel - 1) & 15)), (uint8_t) note, 0);
+        }
+    queueMidi (offset, (uint8_t) (0x90 | ((channel - 1) & 15)), (uint8_t) note, (uint8_t) juce::jlimit (1, 127, velocity));
+    if (releaseAfter >= 0)
+        for (auto& p : pendingOffs)
+            if (! p.active)
+            {
+                p = { true, offset + juce::jmax (1, releaseAfter), (uint8_t) channel, (uint8_t) note };
+                break;
+            }
+}
+
+void Engine::advancePendingOffs (int numSamples)
+{
+    for (auto& p : pendingOffs)
+    {
+        if (! p.active)
+            continue;
+        if (p.samplesLeft < numSamples)
+        {
+            p.active = false;
+            queueMidi (juce::jmax (0, p.samplesLeft), (uint8_t) (0x80 | ((p.channel - 1) & 15)), p.note, 0);
+        }
+        else
+            p.samplesLeft -= numSamples;
+    }
+}
+
+void Engine::flushPendingOffs (int offset)
+{
+    for (auto& p : pendingOffs)
+        if (p.active)
+        {
+            p.active = false;
+            queueMidi (offset, (uint8_t) (0x80 | ((p.channel - 1) & 15)), p.note, 0);
+        }
+}
+
 void Engine::ClockSender::hiResTimerCallback()
 {
+    // notes from the audio thread: send each when its audio is heard
+    engine.midiOutFifo.drain ([this] (const MidiOut& m) { pendingNotes.push_back (m); });
+    if (! pendingNotes.empty())
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        const juce::ScopedLock sl (engine.clockOutLock);
+        size_t keep = 0;
+        for (size_t i = 0; i < pendingNotes.size(); ++i)
+        {
+            const auto& m = pendingNotes[i];
+            if (m.timeMs <= now)
+            {
+                if (engine.clockOut != nullptr)
+                    engine.clockOut->sendMessageNow (juce::MidiMessage (m.bytes[0], m.bytes[1], m.bytes[2]));
+            }
+            else
+                pendingNotes[keep++] = m;
+        }
+        pendingNotes.resize (keep);
+    }
+
     events.clear();
     const bool want = engine.sendMidiClock.load();
     const bool playing = want && engine.uiState.load() != (int) Transport::State::Stopped
@@ -132,6 +219,14 @@ juce::String Engine::getMidiClockOutputName() const
 
 void Engine::timerCallback()
 {
+    // keep recording room on the track that's armed (or about to be), so the audio thread never allocates
+    if (getRecordMode() != RecordMode::None)
+    {
+        ensureRecordable (uiSequence.load(), getSettings().currentTrack);
+        if (const int q = uiQueued.load(); q >= 0)
+            ensureRecordable (q, getSettings().currentTrack);
+    }
+
     // follow the MIDI output chosen in Audio/MIDI setup (opened here, used by the clock thread)
     const auto id = deviceManager.getDefaultMidiOutputIdentifier();
     if (id != clockOutId)
@@ -222,8 +317,36 @@ void Engine::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessag
 
 void Engine::play (bool fromStart) { commands.push ({ fromStart ? Command::PlayStart : Command::Play }); }
 void Engine::stop() { commands.push ({ Command::Stop }); }
-void Engine::setRecord (RecordMode mode) { commands.push ({ Command::Record, (int64_t) mode }); }
-void Engine::queueSequence (int index) { commands.push ({ Command::Queue, index }); }
+void Engine::setRecord (RecordMode mode)
+{
+    if (mode != RecordMode::None)
+        ensureRecordable (uiSequence.load(), getSettings().currentTrack);
+    commands.push ({ Command::Record, (int64_t) mode });
+}
+
+void Engine::queueSequence (int index)
+{
+    ensureRecordable (juce::jlimit (0, kNumSequences - 1, index), getSettings().currentTrack);
+    commands.push ({ Command::Queue, index });
+}
+
+void Engine::ensureRecordable (int seq, int track)
+{
+    seq = juce::jlimit (0, kNumSequences - 1, seq);
+    track = juce::jlimit (0, kNumTracks - 1, track);
+    size_t capacity = 0;
+    withProject ([&] (Project& p) { capacity = p.sequences[(size_t) seq].tracks[(size_t) track].events.capacity(); });
+    if (capacity >= (size_t) kEventCapacity)
+        return;
+    std::vector<NoteEvent> fresh;
+    fresh.reserve ((size_t) kEventCapacity); // allocate outside the lock...
+    withProject ([&] (Project& p) {
+        auto& ev = p.sequences[(size_t) seq].tracks[(size_t) track].events;
+        fresh.assign (ev.begin(), ev.end()); // ...copy into the reserved room (no allocation) and swap
+        ev.swap (fresh);
+    });
+    // the old storage is freed here, outside the lock
+}
 void Engine::locate (int64_t tick) { commands.push ({ Command::Locate, tick }); }
 void Engine::panic() { commands.push ({ Command::Panic }); }
 
@@ -342,7 +465,9 @@ void Engine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     sampleRate = device->getCurrentSampleRate();
     transport.prepare (sampleRate);
     sampler.prepare (sampleRate);
-    trackBuffers.setSize (kNumTracks * 2, std::max (4096, device->getCurrentBufferSizeSamples() * 2));
+    trackBuffers.setSize (kMixChannels, std::max (4096, device->getCurrentBufferSizeSamples() * 2));
+    effects.prepare (sampleRate);
+    uiOutputLatencyMs = (device->getOutputLatencyInSamples() + device->getCurrentBufferSizeSamples()) / sampleRate * 1000.0;
     clickLength = (int) (0.03 * sampleRate);
     if (recBuffer.getNumSamples() == 0)
         recBuffer.setSize (2, (int) (30.0 * sampleRate));
@@ -370,6 +495,8 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         if (outputs[c] != nullptr)
             juce::FloatVectorOperations::clear (outputs[c], numSamples);
 
+    blockStartMs = juce::Time::getMillisecondCounterHiRes();
+    blockLatencyMs = uiOutputLatencyMs.load(); // MIDI goes out when this block's audio is actually heard
     const juce::SpinLock::ScopedLockType sl (lock);
     if (numSamples > trackBuffers.getNumSamples())
         return; // device misreported its block size; skip rather than allocate
@@ -399,12 +526,15 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
             case Command::Record:    transport.armRecord ((RecordMode) c.value); break;
             case Command::Queue:     transport.queueSequence ((int) c.value); break;
             case Command::Locate:    transport.locate (c.value); break;
-            case Command::Panic:     sampler.killAll(); break;
+            case Command::Panic:
+                sampler.killAll();
+                flushPendingOffs (0);
+                break;
             case Command::Audition:
             {
                 const auto& seq = proj.sequences[(size_t) transport.getCurrentSequence()];
                 const int t = juce::jlimit (0, kNumTracks - 1, c.a);
-                const auto& prog = proj.programs[(size_t) seq.tracks[(size_t) t].programIndex];
+                const auto& prog = proj.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, seq.tracks[(size_t) t].programIndex)];
                 sampler.trigger (prog, t, c.b, (int) c.value, 0.0f, (int) (0.5 * sampleRate.load()));
                 break;
             }
@@ -445,8 +575,12 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         {
             case Action::Trigger:
             {
-                const auto& prog = proj.programs[(size_t) seq.tracks[(size_t) a.track].programIndex];
-                sampler.trigger (prog, a.track, a.pad, a.velocity, a.tune, a.releaseAfter, a.variation);
+                const auto& tr = seq.tracks[(size_t) a.track];
+                const auto& prog = proj.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, tr.programIndex)];
+                if (tr.internalSound)
+                    sampler.trigger (prog, a.track, a.pad, a.velocity, a.tune, a.releaseAfter, a.variation);
+                if (tr.sendsMidi())
+                    midiNoteOn (at, tr.midiChannel, padToMidiNote (a.pad) + (int) std::lround (a.tune), a.velocity, a.releaseAfter);
                 if (a.track == settings.currentTrack && a.pad >= 0 && a.pad < kNumPads)
                 {
                     padHitVel[(size_t) a.pad] = a.velocity;
@@ -455,8 +589,13 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
                 break;
             }
             case Action::Release:
+            {
                 sampler.release (a.track, a.pad);
+                const auto& tr = seq.tracks[(size_t) a.track];
+                if (tr.sendsMidi())
+                    midiNoteOff (at, tr.midiChannel, padToMidiNote (a.pad));
                 break;
+            }
             case Action::Click:
                 clickPhase = 0.0;
                 clickFreq = a.accent ? 1600.0 : 1000.0;
@@ -470,6 +609,15 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
         sampler.render (trackBuffers, cursor, numSamples - cursor);
         if (masterL != nullptr && masterR != nullptr)
             renderClick (masterL, masterR, cursor, numSamples - cursor);
+    }
+
+    // ---- MIDI: note-offs due in this block; flush everything when the transport stops
+    {
+        const int st = (int) transport.getState();
+        if (st == (int) Transport::State::Stopped && lastTransportState != st)
+            flushPendingOffs (0);
+        lastTransportState = st;
+        advancePendingOffs (numSamples);
     }
 
     // ---- sample preview (straight to the master bus)
@@ -498,7 +646,7 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
     const float master = dbToGain (proj.masterLevelDb);
     for (int t = 0; t < kNumTracks; ++t)
     {
-        const auto& prog = proj.programs[(size_t) seq.tracks[(size_t) t].programIndex];
+        const auto& prog = proj.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, seq.tracks[(size_t) t].programIndex)];
         const float g = dbToGain (prog.levelDb) * master;
         const float angle = (juce::jlimit (-1.0f, 1.0f, prog.pan) + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
         const float gl = g * std::cos (angle) * juce::MathConstants<float>::sqrt2;
@@ -514,6 +662,15 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int n
             if (masterR != nullptr) masterR[i] += r;
         }
         trackPeaks[(size_t) t] = peak;
+    }
+
+    // ---- send effects (reverb / delay) return into the master bus
+    if (masterL != nullptr)
+    {
+        effects.setParameters (proj.fx, seq.bpm);
+        effects.process (trackBuffers.getReadPointer (kFxChannelBase + 0), trackBuffers.getReadPointer (kFxChannelBase + 1),
+                         trackBuffers.getReadPointer (kFxChannelBase + 2), trackBuffers.getReadPointer (kFxChannelBase + 3),
+                         masterL, masterR, numSamples);
     }
 
     if (proj.vintageMode != 0 && masterL != nullptr)

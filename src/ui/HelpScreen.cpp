@@ -86,6 +86,30 @@ STEP (F2) lists every note on the current track, in order.
 - While stopped, hitting a pad inserts that pad at the cursor position. INSERT adds the selected pad, DELETE removes the selected note.
 - STEP SIZE sets how far STEP moves when there's no note to jump to.)" },
 
+    { "Editing sequences", R"(# Editing sequences
+Press EDIT on MAIN (or SHIFT + 0).
+- LOOP: off plays the sequence once and stops. LOOP TO plays bar 1 once, then loops from that bar (an intro, then the groove).
+- BARS: insert blank bars before a bar, delete a range of bars, or copy a range of bars (several times, into this or another sequence).
+- COPY: copy the whole sequence to another one, or the current track to another track (in any sequence).
+- EVENTS: pick the tracks, bars and pads, then change velocity (add, percent, set), move notes earlier/later by ticks (960 ticks = a beat), shift them to other pads (on MIDI tracks: transpose), set their length, or delete them.
+UNDO SEQ takes back an edit of the current sequence.
+
+# Tracks
+Each sequence has 64 tracks. On MAIN, the TR column next to the tracks pages through them 8 at a time (a * marks pages with notes). In TRACK MUTE, pad banks A-D are tracks 1-16, 17-32, 33-48 and 49-64.)" },
+
+    { "MIDI tracks", R"(# MIDI tracks
+A track can play Padlab's sounds, an external instrument over MIDI, or both.
+1. Pick the MIDI output in DISK > Audio / MIDI setup.
+2. On MAIN, set OUT for the track: DRUM (Padlab's sounds), MIDI ch 1-16 (external only), or DRUM + MIDI (both).
+3. Play and record as usual. Pads send notes: bank A pads 1-16 are notes 36-51 (C1 upward), bank B 52-67, and so on. On a MIDI track the note grid shows note names.
+Notes go out timed to match the audio. Turn on SEND MIDI CLOCK in OTHER to keep the instrument's tempo in sync too.)" },
+
+    { "Effects", R"(# Effects
+Two send effects: a reverb and a delay that follows the tempo.
+1. In PROGRAM, set REVERB SEND and DELAY SEND for each pad (a snare with some reverb, a clap into the delay...).
+2. In OTHER, set the reverb size, damping and level, and the delay time (1/4 to 1/32T), feedback and level.
+The sends are per pad, so one kit can have a dry kick and a wet snare.)" },
+
     { "Songs", R"(# Songs
 SONG (F3) strings sequences together.
 1. ADD STEP adds a step; choose its STEP SEQUENCE and REPEATS.
@@ -114,7 +138,7 @@ Turn on SEND MIDI CLOCK in OTHER, and pick the MIDI output in DISK > Audio / MID
     { "Panel controls", R"(# Panel controls
 - CURSOR (or the arrow keys) moves the brackets between the fields on the screen. You can also click a field.
 - DATA wheel: drag around it, scroll over it, or press - and = to change the field under the cursor.
-- Keypad: type a number and press ENTER to set the field exactly. SHIFT + key opens the mode printed under it: 1 SONG, 2 STEP, 3 DISK, 4 SAMPLE, 5 TRIM, 6 PROGRAM, 7 MIXER, 8 OTHER, 9 MIDI, 0 MAIN.
+- Keypad: type a number and press ENTER to set the field exactly. SHIFT + key opens the mode printed under it: 1 SONG, 2 STEP, 3 DISK, 4 SAMPLE, 5 TRIM, 6 PROGRAM, 7 MIXER, 8 OTHER, 9 MIDI, 0 EDIT.
 - OPEN WINDOW opens the field's full editor (a list or a value box).
 - MAIN SCREEN goes back to MAIN.
 - MAIN VOLUME sets the output level; REC GAIN the input level for sampling.

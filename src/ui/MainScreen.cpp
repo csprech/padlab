@@ -30,16 +30,26 @@ public:
             const auto& seq = p.sequences[(size_t) seqIdx];
             length = seq.getLengthTicks();
             beatsPerBar = seq.beatsPerBar;
-            events = seq.tracks[(size_t) track].events;
-            const auto& prog = p.programs[(size_t) seq.tracks[(size_t) track].programIndex];
+            const auto& tr = seq.tracks[(size_t) track];
+            events = tr.events;
+            const auto& prog = p.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, tr.programIndex)];
             for (int i = 0; i < kPadsPerBank; ++i)
             {
+                const int pad = bank * kPadsPerBank + i;
                 juce::String n;
-                for (auto& l : prog.pads[(size_t) (bank * kPadsPerBank + i)].layers)
-                    if (l.sample != nullptr) { n = describeLayer (l); break; }
+                if (! tr.internalSound && tr.sendsMidi()) // MIDI track: rows are notes
+                    n = juce::MidiMessage::getMidiNoteName (padToMidiNote (pad), true, true, 3) + " (" + juce::String (padToMidiNote (pad)) + ")";
+                else
+                    for (auto& l : prog.pads[(size_t) pad].layers)
+                        if (l.sample != nullptr) { n = describeLayer (l); break; }
                 rowNames[(size_t) i] = n;
             }
         });
+        // long sequences show 8 bars at a time; the view pages along with the playhead
+        const int64_t barTicks = (int64_t) beatsPerBar * kPPQN;
+        viewLen = juce::jmin<int64_t> (length, 8 * barTicks);
+        const auto pos = (int64_t) ctx.engine.getPositionTicks();
+        viewStart = viewLen > 0 ? juce::jlimit<int64_t> (0, juce::jmax<int64_t> (0, length - viewLen), (pos / viewLen) * viewLen) : 0;
         const auto sig = signature();
         if (sig != lastSignature)
         {
@@ -51,7 +61,7 @@ public:
     /** Playhead x for a tick position, or -1. */
     juce::Rectangle<int> playheadRect (double ticks) const
     {
-        if (length <= 0)
+        if (length <= 0 || ticks < (double) viewStart || ticks >= (double) (viewStart + viewLen))
             return {};
         return { (int) xFor ((int64_t) ticks), headerH, 2, getHeight() - headerH };
     }
@@ -91,7 +101,7 @@ public:
 
         // vertical grid
         const int64_t barTicks = (int64_t) beatsPerBar * kPPQN;
-        for (int64_t t = 0; t <= length; t += 240)
+        for (int64_t t = viewStart; t <= viewStart + viewLen; t += 240)
         {
             const float x = xFor (t);
             const bool bar = (t % barTicks) == 0, beat = (t % kPPQN) == 0;
@@ -112,7 +122,7 @@ public:
         for (auto& e : events)
         {
             const int i = e.pad - bank * kPadsPerBank;
-            if (i < 0 || i >= kPadsPerBank)
+            if (i < 0 || i >= kPadsPerBank || e.tick < viewStart || e.tick >= viewStart + viewLen)
                 continue;
             auto row = rowRect (i);
             const float x = xFor (e.tick);
@@ -220,12 +230,12 @@ private:
     float xFor (int64_t tick) const
     {
         const float w = (float) (getWidth() - gutterW);
-        return gutterW + (length > 0 ? w * (float) tick / (float) length : 0.0f);
+        return gutterW + (viewLen > 0 ? w * (float) (tick - viewStart) / (float) viewLen : 0.0f);
     }
     int64_t tickAt (int x) const
     {
         const double w = getWidth() - gutterW;
-        return (int64_t) ((x - gutterW) / w * (double) length);
+        return viewStart + (int64_t) ((x - gutterW) / w * (double) viewLen);
     }
     juce::Rectangle<float> rowRect (int i) const
     {
@@ -242,7 +252,7 @@ private:
 
     juce::int64 signature() const
     {
-        juce::int64 h = (juce::int64) length * 31 + beatsPerBar * 7 + track * 131 + bank * 977 + ctx.selectedPad * 7919;
+        juce::int64 h = (juce::int64) length * 31 + beatsPerBar * 7 + track * 131 + bank * 977 + ctx.selectedPad * 7919 + viewStart * 13;
         for (auto& e : events)
             h = h * 1000003 + e.tick * 131 + e.pad * 17 + e.velocity * 3 + e.length;
         for (auto& n : rowNames)
@@ -254,7 +264,7 @@ private:
     static constexpr int gutterW = 118, headerH = 18;
     std::vector<NoteEvent> events;
     std::array<juce::String, kPadsPerBank> rowNames;
-    int64_t length = 3840;
+    int64_t length = 3840, viewStart = 0, viewLen = 3840;
     int beatsPerBar = 4, track = 0, bank = 0;
     juce::int64 lastSignature = 0;
     int dragEvent = -1, dragPad = 0, dragStartVel = 100;
@@ -266,29 +276,45 @@ private:
 class TrackStrip : public juce::Component
 {
 public:
+    static constexpr int kPerPage = 8;
+    static constexpr int kPages = kNumTracks / kPerPage;
+
     explicit TrackStrip (AppContext& c) : ctx (c) {}
 
     void refreshData()
     {
         const int seqIdx = ctx.engine.getCurrentSequence();
-        current = ctx.engine.getSettings().currentTrack;
+        const int cur = ctx.engine.getSettings().currentTrack;
+        if (cur != current)
+            page = cur / kPerPage; // follow the current track
+        current = cur;
         ctx.engine.withProject ([&] (Project& p) {
             const auto& seq = p.sequences[(size_t) seqIdx];
-            for (int t = 0; t < kNumTracks; ++t)
+            for (int k = 0; k < kPerPage; ++k)
             {
-                const auto& tr = seq.tracks[(size_t) t];
-                info[(size_t) t] = { tr.name, p.programs[(size_t) tr.programIndex].name, tr.mute, tr.solo,
-                                     ! tr.events.empty() };
+                const auto& tr = seq.tracks[(size_t) (page * kPerPage + k)];
+                const juce::String out = tr.sendsMidi() ? (tr.internalSound ? "+MIDI " : "MIDI ") + juce::String (tr.midiChannel) : juce::String();
+                info[(size_t) k] = { tr.name, (tr.internalSound ? p.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, tr.programIndex)].name + " " : juce::String()) + out,
+                                     tr.mute, tr.solo, ! tr.events.empty() };
+            }
+            for (int pg = 0; pg < kPages; ++pg)
+            {
+                bool any = false;
+                for (int k = 0; k < kPerPage && ! any; ++k)
+                    any = ! seq.tracks[(size_t) (pg * kPerPage + k)].events.empty();
+                pageUsed[(size_t) pg] = any;
             }
         });
-        juce::int64 sig = current;
-        for (int t = 0; t < kNumTracks; ++t)
+        juce::int64 sig = current * 7 + page * 1000003;
+        for (int k = 0; k < kPerPage; ++k)
         {
-            level[(size_t) t] = juce::jmax (ctx.engine.getTrackPeak (t), level[(size_t) t] * 0.8f);
-            const auto& in = info[(size_t) t];
+            level[(size_t) k] = juce::jmax (ctx.engine.getTrackPeak (page * kPerPage + k), level[(size_t) k] * 0.8f);
+            const auto& in = info[(size_t) k];
             sig = sig * 131 + in.name.hashCode64() + in.program.hashCode64() * 3 + (in.mute ? 5 : 0) + (in.solo ? 7 : 0)
                   + (in.hasEvents ? 11 : 0);
         }
+        for (int pg = 0; pg < kPages; ++pg)
+            sig = sig * 3 + (pageUsed[(size_t) pg] ? 1 : 0);
         if (sig != lastSignature)
         {
             lastSignature = sig;
@@ -299,10 +325,46 @@ public:
     void paint (juce::Graphics& g) override
     {
         using namespace theme::lcd;
-        for (int t = 0; t < kNumTracks; ++t)
+        // page selector: up / down arrows around the page's track range; a dot per page that has notes
+        auto sel = pagerArea();
+        g.setColour (screenLine);
+        g.drawRect (sel, 1.0f);
+        auto up = sel.removeFromTop (sel.getHeight() * 0.3f), down = sel.removeFromBottom (up.getHeight());
+        auto arrow = [&g] (juce::Rectangle<float> r, bool pointUp, bool enabled) {
+            const auto c = r.getCentre();
+            juce::Path p;
+            const float s = juce::jmin (r.getWidth(), r.getHeight()) * 0.28f;
+            if (pointUp) p.addTriangle (c.x - s, c.y + s * 0.6f, c.x + s, c.y + s * 0.6f, c.x, c.y - s * 0.6f);
+            else         p.addTriangle (c.x - s, c.y - s * 0.6f, c.x + s, c.y - s * 0.6f, c.x, c.y + s * 0.6f);
+            g.setColour (enabled ? theme::lcd::ink : theme::lcd::textDim.withAlpha (0.4f));
+            g.fillPath (p);
+        };
+        arrow (up, true, page > 0);
+        arrow (down, false, page < kPages - 1);
+        g.setColour (text);
+        g.setFont (theme::screenFont (10.0f, true));
+        auto mid = sel;
+        g.drawText ("TR", mid.removeFromTop (mid.getHeight() * 0.3f).toNearestInt(), juce::Justification::centred);
+        g.setFont (theme::screenFont (10.0f));
+        g.drawText (juce::String (page * kPerPage + 1) + "-" + juce::String (page * kPerPage + kPerPage),
+                    mid.removeFromTop (mid.getHeight() * 0.55f).toNearestInt(), juce::Justification::centred);
+        const float dot = juce::jmin (3.0f, mid.getWidth() / (kPages * 1.6f));
+        const float x0 = mid.getCentreX() - (kPages - 1) * dot * 0.8f;
+        for (int pg = 0; pg < kPages; ++pg)
         {
-            auto r = cell (t);
-            const auto& in = info[(size_t) t];
+            auto d = juce::Rectangle<float> (dot, dot).withCentre ({ x0 + pg * dot * 1.6f, mid.getCentreY() });
+            g.setColour (pg == page ? ink : (pageUsed[(size_t) pg] ? text : textDim.withAlpha (0.35f)));
+            if (pg == page || pageUsed[(size_t) pg])
+                g.fillRect (d);
+            else
+                g.drawRect (d, 0.6f);
+        }
+
+        for (int k = 0; k < kPerPage; ++k)
+        {
+            const int t = page * kPerPage + k;
+            auto r = cell (k);
+            const auto& in = info[(size_t) k];
             g.setColour (t == current ? accent.withAlpha (0.16f) : juce::Colours::transparentBlack);
             g.fillRect (r);
             g.setColour (t == current ? accent : screenLine);
@@ -317,7 +379,6 @@ public:
             g.setColour (textDim);
             g.drawText (in.program, inner.withTrimmedRight (40).toNearestInt(), juce::Justification::centredLeft, true);
 
-            // M / S
             auto ms = inner.removeFromRight (36.0f);
             auto m = ms.removeFromLeft (17.0f).reduced (1.0f), s = ms.reduced (1.0f);
             g.setColour (text);
@@ -328,15 +389,24 @@ public:
             g.drawText ("M", m.toNearestInt(), juce::Justification::centred);
             g.setColour (in.solo ? screen : text);
             g.drawText ("S", s.toNearestInt(), juce::Justification::centred);
-
         }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        for (int t = 0; t < kNumTracks; ++t)
+        auto sel = pagerArea();
+        if (sel.contains (e.position))
         {
-            auto r = cell (t);
+            // top half pages up, bottom half pages down
+            page = juce::jlimit (0, kPages - 1, page + (e.position.y < sel.getCentreY() ? -1 : 1));
+            lastSignature = -1;
+            refreshData();
+            return;
+        }
+        for (int k = 0; k < kPerPage; ++k)
+        {
+            const int t = page * kPerPage + k;
+            auto r = cell (k);
             if (! r.contains (e.position))
                 continue;
             auto inner = r.reduced (5.0f, 3.0f);
@@ -356,6 +426,8 @@ public:
             else
             {
                 ctx.engine.updateSettings ([t] (PerformanceSettings& s) { s.currentTrack = t; });
+                if (ctx.engine.getRecordMode() != RecordMode::None)
+                    ctx.engine.ensureRecordable (seqIdx, t);
             }
             ctx.changed();
             refreshData();
@@ -363,18 +435,21 @@ public:
         }
     }
 
-    juce::Rectangle<int> meterRect (int t) const
+    /** Meters for the 8 tracks on the current page. */
+    juce::Rectangle<int> meterRect (int k) const
     {
-        auto r = cell (t);
+        auto r = cell (k);
         return r.removeFromBottom (3.0f).reduced (2.0f, 0.0f).toNearestInt();
     }
-    float meterLevel (int t) const { return std::round (juce::jmin (1.0f, level[(size_t) t]) * 40.0f) / 40.0f; }
+    float meterLevel (int k) const { return std::round (juce::jmin (1.0f, level[(size_t) k]) * 40.0f) / 40.0f; }
 
 private:
-    juce::Rectangle<float> cell (int t) const
+    juce::Rectangle<float> pagerArea() const { return getLocalBounds().toFloat().removeFromRight (34.0f).reduced (1.0f, 2.0f); }
+    juce::Rectangle<float> cell (int k) const
     {
-        const float w = getWidth() / 4.0f, h = getHeight() / 2.0f;
-        return juce::Rectangle<float> ((t % 4) * w, (t / 4) * h, w, h).reduced (2.0f);
+        auto area = getLocalBounds().toFloat().withTrimmedRight (36.0f);
+        const float w = area.getWidth() / 4.0f, h = area.getHeight() / 2.0f;
+        return juce::Rectangle<float> ((k % 4) * w, (k / 4) * h, w, h).reduced (2.0f);
     }
 
     struct Info
@@ -383,9 +458,10 @@ private:
         bool mute = false, solo = false, hasEvents = false;
     };
     AppContext& ctx;
-    std::array<Info, kNumTracks> info;
-    std::array<float, kNumTracks> level {};
-    int current = 0;
+    std::array<Info, kPerPage> info;
+    std::array<float, kPerPage> level {};
+    std::array<bool, kPages> pageUsed {};
+    int current = -1, page = 0;
     juce::int64 lastSignature = -1;
 };
 
@@ -414,11 +490,12 @@ public:
                 editSequence ([v = bpm.getValue()] (Sequence& s) { s.bpm = v; });
         };
 
-        setupCombo (bars, { "1", "2", "3", "4", "8", "16", "32", "64" });
+        setupCombo (bars, { "1", "2", "3", "4", "8", "16", "32", "64", "128", "256", "999" });
+        bars.setEditableText (true); // any length 1-999: type it
         bars.onChange = [this] {
             if (loading)
                 return;
-            const int b = bars.getText().getIntValue();
+            const int b = juce::jlimit (1, kMaxBars, bars.getText().getIntValue());
             ctx.engine.pushUndo ("change length");
             editSequence ([b] (Sequence& s) {
                 s.bars = b;
@@ -502,7 +579,7 @@ public:
             ctx.engine.pushUndo ("double");
             bool ok = true;
             editSequence ([&ok] (Sequence& s) {
-                if (s.bars * 2 > 64) { ok = false; return; }
+                if (s.bars * 2 > kMaxBars) { ok = false; return; }
                 const auto L = s.getLengthTicks();
                 for (auto& t : s.tracks)
                 {
@@ -516,12 +593,39 @@ public:
                 }
                 s.bars *= 2;
             });
-            flash (ok ? "Sequence doubled" : "Max 64 bars");
+            flash (ok ? "Sequence doubled" : "Max 999 bars");
+        };
+
+        // track output: the program's sounds, a MIDI channel, or both (like drum tracks that also send MIDI)
+        {
+            juce::StringArray outs { "DRUM (internal)" };
+            for (int ch = 1; ch <= 16; ++ch)
+                outs.add ("MIDI ch " + juce::String (ch));
+            for (int ch = 1; ch <= 16; ++ch)
+                outs.add ("DRUM + MIDI " + juce::String (ch));
+            setupCombo (outBox, outs);
+            outBox.setTooltip ("Where this track plays: Padlab's sounds, an external MIDI instrument (pick the MIDI output in DISK > Audio/MIDI setup), or both");
+            outBox.onChange = [this] {
+                if (loading)
+                    return;
+                const int id = outBox.getSelectedId(), t = ctx.currentTrack();
+                editSequence ([id, t] (Sequence& s) {
+                    auto& tr = s.tracks[(size_t) t];
+                    tr.midiChannel = id <= 1 ? 0 : (id <= 17 ? id - 1 : id - 17);
+                    tr.internalSound = id <= 1 || id > 17;
+                });
+                ctx.changed();
+            };
+        }
+        editBtn.setTooltip ("EDIT: insert / delete / copy bars, copy sequences and tracks, edit ranges of notes, loop");
+        editBtn.onClick = [this] {
+            if (ctx.showScreen)
+                ctx.showScreen (ScreenMode::Edit);
         };
 
         for (auto* comp : std::initializer_list<juce::Component*> { &seqBox, &bpm, &bars, &timeSig, &programBox, &tc, &swing,
                                                                     &repeatRate, &legacy96, &metronome, &countIn, &clearBtn,
-                                                                    &quantizeBtn, &doubleBtn, &grid, &tracks })
+                                                                    &quantizeBtn, &doubleBtn, &grid, &tracks, &outBox, &editBtn })
             addAndMakeVisible (comp);
     }
 
@@ -532,8 +636,8 @@ public:
     {
         if (playing)
             o.playhead = grid.playheadRect (ticks) + grid.getPosition();
-        for (int t = 0; t < kNumTracks; ++t)
-            o.meters.push_back ({ tracks.meterRect (t) + tracks.getPosition(), tracks.meterLevel (t), false });
+        for (int k = 0; k < TrackStrip::kPerPage; ++k)
+            o.meters.push_back ({ tracks.meterRect (k) + tracks.getPosition(), tracks.meterLevel (k), false });
     }
 
     void contextChanged() override
@@ -557,6 +661,16 @@ public:
         seqBox.setSelectedId (seqIdx + 1, juce::dontSendNotification);
         setupCombo (programBox, progNames);
         programBox.setSelectedId (progIdx + 1, juce::dontSendNotification);
+        {
+            int ch = 0;
+            bool internal = true;
+            ctx.engine.withProject ([&] (Project& p) {
+                const auto& tr = p.sequences[(size_t) seqIdx].tracks[(size_t) s.currentTrack];
+                ch = tr.midiChannel;
+                internal = tr.internalSound;
+            });
+            outBox.setSelectedId (ch == 0 ? 1 : (internal ? 17 + ch : 1 + ch), juce::dontSendNotification);
+        }
         tc.setSelectedId (s.timingCorrect + 1, juce::dontSendNotification);
         swing.setValue (s.swing, juce::dontSendNotification);
         repeatRate.setSelectedId (s.repeatDivision + 1, juce::dontSendNotification);
@@ -599,7 +713,10 @@ public:
         legacy96.setBounds (row2.removeFromLeft (120));
         metronome.setBounds (row2.removeFromLeft (70));
         countIn.setBounds (row2.removeFromLeft (90));
-        doubleBtn.setBounds (row2.removeFromRight (80));
+        outBox.setBounds (row2.removeFromLeft (juce::jmin (150, row2.getWidth() - 330)).reduced (2, 0));
+        editBtn.setBounds (row2.removeFromRight (64));
+        row2.removeFromRight (4);
+        doubleBtn.setBounds (row2.removeFromRight (70));
         row2.removeFromRight (4);
         quantizeBtn.setBounds (row2.removeFromRight (90));
         row2.removeFromRight (4);
@@ -632,7 +749,8 @@ private:
     juce::ComboBox seqBox, bars, timeSig, programBox, tc, repeatRate;
     juce::Slider bpm, swing;
     juce::ToggleButton legacy96, metronome, countIn;
-    juce::TextButton clearBtn { "Clear track" }, quantizeBtn { "Quantize" }, doubleBtn { "Double" };
+    juce::TextButton clearBtn { "Clear track" }, quantizeBtn { "Quantize" }, doubleBtn { "Double" }, editBtn { "EDIT" };
+    juce::ComboBox outBox;
     bool loading = false;
 };
 } // namespace

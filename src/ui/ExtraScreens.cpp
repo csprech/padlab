@@ -276,7 +276,7 @@ public:
             const auto& sg = p.songs[(size_t) s.currentSong];
             nameEdit.setText (sg.name, juce::dontSendNotification);
             loop.setToggleState (sg.loop, juce::dontSendNotification);
-            loopTo.setRange (1, juce::jmax (1, sg.numSteps), 1);
+            loopTo.setRange (1, juce::jmax (2, sg.numSteps), 1); // a slider needs end > start
             loopTo.setValue (sg.loopToStep + 1, juce::dontSendNotification);
             loopTo.setEnabled (sg.loop && sg.numSteps > 1);
             for (int i = 0; i < sg.numSteps; ++i)
@@ -769,6 +769,25 @@ public:
             if (! loading)
                 ctx.engine.withProject ([v = vintage.getSelectedId() - 1] (Project& p) { p.vintageMode = v; });
         };
+        // send effects
+        setupParam (revSize, 0, 100, 1, " %");
+        revSize.onValueChange = [this] { fx ([v = (float) revSize.getValue() / 100.0f] (FxSettings& f) { f.reverbSize = v; }); };
+        setupParam (revDamp, 0, 100, 1, " %");
+        revDamp.onValueChange = [this] { fx ([v = (float) revDamp.getValue() / 100.0f] (FxSettings& f) { f.reverbDamping = v; }); };
+        setupParam (revReturn, -40, 6, 0.5, " dB");
+        revReturn.onValueChange = [this] { fx ([v = (float) revReturn.getValue()] (FxSettings& f) { f.reverbReturnDb = v; }); };
+        {
+            juce::StringArray divs;
+            for (int i = 0; i < timing::kNumDivisions - 1; ++i)
+                divs.add (timing::divisions()[(size_t) i].name);
+            setupCombo (dlyTime, divs);
+        }
+        dlyTime.onChange = [this] { fx ([v = dlyTime.getSelectedId() - 1] (FxSettings& f) { f.delayDivision = v; }); };
+        setupParam (dlyFeedback, 0, 90, 1, " %");
+        dlyFeedback.onValueChange = [this] { fx ([v = (float) dlyFeedback.getValue() / 100.0f] (FxSettings& f) { f.delayFeedback = v; }); };
+        setupParam (dlyReturn, -40, 6, 0.5, " dB");
+        dlyReturn.onValueChange = [this] { fx ([v = (float) dlyReturn.getValue()] (FxSettings& f) { f.delayReturnDb = v; }); };
+
         setupParam (masterLevel, -24, 6, 0.1, " dB");
         masterLevel.onValueChange = [this] {
             if (! loading)
@@ -830,9 +849,12 @@ public:
                                                                     &secVar, &capNvType, &nvType, &capNvTarget, &nvTarget, &nvOn,
                                                                     &capSixteen, &sixteenParam, &secTiming, &metronome,
                                                                     &clickRecOnly, &countIn, &autoOverdub, &capTcStrength,
-                                                                    &tcStrength, &capShift, &shift, &midiClock, &midiInfo })
+                                                                    &tcStrength, &capShift, &shift, &midiClock, &midiInfo,
+                                                                    &secFx, &capRevSize, &revSize, &capRevDamp, &revDamp, &capRevReturn,
+                                                                    &revReturn, &capDlyTime, &dlyTime, &capDlyFeedback, &dlyFeedback,
+                                                                    &capDlyReturn, &dlyReturn })
             addAndMakeVisible (comp);
-        for (auto* l : { &secSound, &secVar, &secTiming })
+        for (auto* l : { &secSound, &secVar, &secTiming, &secFx })
         {
             l->setFont (theme::screenFont (14.0f, true));
             l->setColour (juce::Label::textColourId, theme::lcd::ink);
@@ -860,7 +882,17 @@ public:
         auto row = r.removeFromTop (40);
         placeField (row, capVintage, vintage, 220);
         placeField (row, capMaster, masterLevel, 140);
-        r.removeFromTop (10);
+        r.removeFromTop (6);
+        section (secFx);
+        row = r.removeFromTop (40);
+        placeField (row, capRevSize, revSize, 96);
+        placeField (row, capRevDamp, revDamp, 96);
+        placeField (row, capRevReturn, revReturn, 104);
+        row.removeFromLeft (14);
+        placeField (row, capDlyTime, dlyTime, 84);
+        placeField (row, capDlyFeedback, dlyFeedback, 96);
+        placeField (row, capDlyReturn, dlyReturn, 104);
+        r.removeFromTop (6);
         section (secVar);
         row = r.removeFromTop (40);
         placeField (row, capNvType, nvType, 120);
@@ -889,6 +921,12 @@ public:
         const auto s = ctx.engine.getSettings();
         ctx.engine.withProject ([&] (Project& p) {
             vintage.setSelectedId (p.vintageMode + 1, juce::dontSendNotification);
+            revSize.setValue (p.fx.reverbSize * 100.0, juce::dontSendNotification);
+            revDamp.setValue (p.fx.reverbDamping * 100.0, juce::dontSendNotification);
+            revReturn.setValue (p.fx.reverbReturnDb, juce::dontSendNotification);
+            dlyTime.setSelectedId (p.fx.delayDivision + 1, juce::dontSendNotification);
+            dlyFeedback.setValue (p.fx.delayFeedback * 100.0, juce::dontSendNotification);
+            dlyReturn.setValue (p.fx.delayReturnDb, juce::dontSendNotification);
             masterLevel.setValue (p.masterLevelDb, juce::dontSendNotification);
         });
         nvType.setSelectedId (juce::jlimit (1, 4, (int) s.noteVariationType), juce::dontSendNotification);
@@ -907,6 +945,13 @@ public:
     }
 
 private:
+    template <typename Fn>
+    void fx (Fn&& fn)
+    {
+        if (! loading)
+            ctx.engine.withProject ([&] (Project& p) { fn (p.fx); });
+    }
+
     void applyTarget()
     {
         const int pad = nvTarget.getSelectedId() == 2 ? -1 : ctx.selectedPad;
@@ -918,7 +963,11 @@ private:
     Caption capVintage { "Converter character" }, capMaster { "Master level" }, capNvType { "Slider controls" },
         capNvTarget { "Applies to" }, capSixteen { "16 levels by" }, capTcStrength { "Timing correct strength" };
     juce::ComboBox vintage, nvType, nvTarget, sixteenParam;
-    juce::Slider masterLevel, tcStrength, shift;
+    juce::Slider masterLevel, tcStrength, shift, revSize, revDamp, revReturn, dlyFeedback, dlyReturn;
+    juce::ComboBox dlyTime;
+    juce::Label secFx { {}, "EFFECTS (pad sends in PROGRAM)" };
+    Caption capRevSize { "Reverb size" }, capRevDamp { "Damping" }, capRevReturn { "Reverb level" }, capDlyTime { "Delay time" },
+        capDlyFeedback { "Feedback" }, capDlyReturn { "Delay level" };
     Caption capShift { "Timing shift" };
     juce::ToggleButton nvOn, metronome, clickRecOnly, countIn, autoOverdub, midiClock;
 };

@@ -11,7 +11,8 @@ struct ProjectIOTests : juce::UnitTest
     void runTest() override
     {
         beginTest ("factory project round-trips through disk");
-        Project p;
+        auto pStore = std::make_unique<Project>(); // ~1 MB each: keep them off the stack
+        auto& p = *pStore;
         drumsynth::loadFactoryProject (p);
         p.name = "RoundTrip";
         p.programs[0].pads[5].tuneSemis = -3.5f;
@@ -28,6 +29,18 @@ struct ProjectIOTests : juce::UnitTest
         e.variation = { VariationType::Attack, 99 };
         p.sequences[3].tracks[2].insertSorted (e);
         p.vintageMode = 1;
+        p.programs[20].name = "Program twenty-one";
+        p.programs[20].pads[3].reverbSend = 0.25f;
+        p.programs[20].pads[3].delaySend = 0.75f;
+        p.programs[20].pads[3].layers[0].sample = p.samplePool.front();
+        p.sequences[90].bars = 120;
+        p.sequences[90].loop = false;
+        p.sequences[90].loopToBar = 7;
+        p.sequences[90].tracks[50].midiChannel = 10;
+        p.sequences[90].tracks[50].internalSound = false;
+        p.sequences[90].tracks[50].insertSorted (e);
+        p.fx.delayDivision = 2;
+        p.fx.reverbSize = 0.8f;
         p.songs[2].name = "Verse/Chorus";
         p.songs[2].insertStep (0, { 3, 4 });
         p.songs[2].insertStep (1, { 5, 2 });
@@ -42,7 +55,8 @@ struct ProjectIOTests : juce::UnitTest
         expect (dir.getChildFile ("project.json").existsAsFile());
         expectEquals (dir.getChildFile ("samples").getNumberOfChildFiles (juce::File::findFiles), (int) p.samplePool.size());
 
-        Project q;
+        auto qStore = std::make_unique<Project>();
+        auto& q = *qStore;
         expect (projectio::load (dir, q, err), err);
         expectEquals (q.name, juce::String ("RoundTrip"));
         expectEquals ((int) q.samplePool.size(), (int) p.samplePool.size());
@@ -68,6 +82,18 @@ struct ProjectIOTests : juce::UnitTest
             expect (ev[0].variation == NoteVariation { VariationType::Attack, 99 });
         }
         expectEquals (q.vintageMode, 1);
+        expectEquals (q.programs[20].name, juce::String ("Program twenty-one"));
+        expectEquals (q.programs[20].pads[3].reverbSend, 0.25f);
+        expectEquals (q.programs[20].pads[3].delaySend, 0.75f);
+        expectEquals (q.sequences[90].bars, 120);
+        expect (! q.sequences[90].loop);
+        expectEquals (q.sequences[90].loopToBar, 7);
+        expectEquals (q.sequences[90].tracks[50].midiChannel, 10);
+        expect (! q.sequences[90].tracks[50].internalSound);
+        expectEquals ((int) q.sequences[90].tracks[50].events.size(), 1);
+        expectEquals (q.fx.delayDivision, 2);
+        expectEquals (q.fx.reverbSize, 0.8f);
+        expectEquals (q.sequences[90].tracks[49].programIndex, 49 % kNumPrograms); // untouched tracks keep defaults
         expectEquals (q.songs[2].name, juce::String ("Verse/Chorus"));
         expectEquals (q.songs[2].numSteps, 2);
         expectEquals (q.songs[2].steps[1].sequence, 5);

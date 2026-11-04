@@ -20,6 +20,8 @@ void Transport::play (bool fromStart, bool countIn)
         position = 0.0;
     playStartTick = position;
     unwrappedBase = 0.0;
+    passStartLocal = 0.0;
+    prevUnwrappedBase = -1.0e12;
     passCount = 0;
     countInRemaining = 0.0;
     state = (recordMode != RecordMode::None && countIn) ? State::CountIn : State::Playing;
@@ -34,7 +36,7 @@ void Transport::playSong (const Project& p, int song, int fromStep)
     if (sg.numSteps <= 0)
         return;
     playingSong = true;
-    songEnded = false;
+    endReached = false;
     songIndex = std::clamp (song, 0, kNumSongs - 1);
     songStep = std::clamp (fromStep, 0, sg.numSteps - 1);
     songRepeat = 0;
@@ -44,6 +46,8 @@ void Transport::playSong (const Project& p, int song, int fromStep)
     position = 0.0;
     playStartTick = 0.0;
     unwrappedBase = 0.0;
+    passStartLocal = 0.0;
+    prevUnwrappedBase = -1.0e12;
     passCount = 0;
     countInRemaining = 0.0;
     state = State::Playing;
@@ -170,7 +174,7 @@ void Transport::scanSegment (Project& p, const PerformanceSettings& s, double se
     for (int ti = 0; ti < kNumTracks; ++ti)
     {
         auto& track = seq.tracks[(size_t) ti];
-        auto& prog = p.programs[(size_t) std::clamp (track.programIndex, 0, kNumTracks - 1)];
+        auto& prog = p.programs[(size_t) std::clamp (track.programIndex, 0, kNumPrograms - 1)];
         const bool isCurrent = (ti == s.currentTrack);
         const bool audible = trackAudible (track, anySolo);
 
@@ -258,7 +262,7 @@ void Transport::repeatSegment (Project& p, const PerformanceSettings& s, double 
             a.releaseAfter = releaseSamples;
             out.add (a);
 
-            if (recordInto && ! track.isFull())
+            if (recordInto && track.canRecord())
             {
                 NoteEvent e;
                 e.tick = g;
@@ -268,7 +272,7 @@ void Transport::repeatSegment (Project& p, const PerformanceSettings& s, double 
                 e.variation = h.variation;
                 e.length = div.ticks / 2;
                 e.flags = (recordMode == RecordMode::Record) ? NoteEvent::Fresh : 0;
-                track.insertSorted (e);
+                track.insertSortedNoAlloc (e);
             }
             g = timing::nextGridPoint (g + 1, div.ticks, div.swingable, s.swing, s.legacy96);
         }
@@ -293,8 +297,14 @@ void Transport::clicksInRange (const Sequence& seq, double start, double end, do
 void Transport::handleWrap (Project& p, const PerformanceSettings& s)
 {
     auto& seq = p.sequences[(size_t) currentSequence];
-    unwrappedBase += (double) seq.getLengthTicks();
-    position = 0.0;
+    const double L = (double) seq.getLengthTicks();
+    // where the next pass starts: bar 1, or the loop-to bar (songs and sequence changes always restart at bar 1)
+    const bool restartAtTop = playingSong || queuedSequence >= 0;
+    const double loopStart = restartAtTop ? 0.0 : (double) seq.getLoopStartTicks();
+    prevUnwrappedBase = unwrappedBase;
+    unwrappedBase += L - loopStart; // keeps unwrappedBase + position continuous
+    position = loopStart;
+    passStartLocal = loopStart;
     ++passCount;
 
     if (isRecording() && recordMode == RecordMode::Record && s.autoOverdub)
@@ -306,7 +316,7 @@ void Transport::handleWrap (Project& p, const PerformanceSettings& s)
     if (playingSong)
     {
         if (! advanceSong (p))
-            songEnded = true;
+            endReached = true;
         return;
     }
 
@@ -314,7 +324,11 @@ void Transport::handleWrap (Project& p, const PerformanceSettings& s)
     {
         currentSequence = queuedSequence;
         queuedSequence = -1;
+        return;
     }
+
+    if (! seq.loop)
+        endReached = true; // loop off: play once and stop
 }
 
 void Transport::recordHit (Project& p, const PerformanceSettings& s, int targetPad, int velocity, float tune,
@@ -322,20 +336,23 @@ void Transport::recordHit (Project& p, const PerformanceSettings& s, int targetP
 {
     auto& seq = p.sequences[(size_t) currentSequence];
     auto& track = seq.tracks[(size_t) std::clamp (s.currentTrack, 0, kNumTracks - 1)];
-    if (track.isFull())
+    if (! track.canRecord())
         return;
 
     const int64_t L = seq.getLengthTicks();
     // which pass does this hit belong to? (a wrap may have happened inside this block)
     double base = unwrappedBase;
-    if (rawUnwrapped < base)
-        base -= (double) L;
+    if (rawUnwrapped < unwrappedBase + passStartLocal)
+        base = prevUnwrappedBase;
     const int64_t rawLocal = (int64_t) std::llround (rawUnwrapped - base);
 
     const auto& tc = division (s.timingCorrect);
     int64_t q = timing::quantize (rawLocal, tc.ticks, tc.swingable, s.swing, s.tcStrength, s.legacy96) + s.shiftTicks;
     const double qUnwrapped = base + (double) q;
 
+    // snapped past the end: it belongs at the start of the next pass (bar 1, or the loop-to bar)
+    if (q >= L)
+        q = (playingSong ? 0 : seq.getLoopStartTicks()) + (q - L);
     NoteEvent e;
     e.tick = ((q % L) + L) % L;
     e.pad = (int16_t) targetPad;
@@ -348,7 +365,8 @@ void Transport::recordHit (Project& p, const PerformanceSettings& s, int targetP
         e.flags |= NoteEvent::Fresh;
     if (qUnwrapped >= blockEndUnwrapped)
         e.flags |= NoteEvent::SkipOnce; // we already heard it live; don't double-trigger when snapped forward
-    track.insertSorted (e);
+    if (! track.insertSortedNoAlloc (e))
+        return; // no reserved room on this track (the engine reserves it when recording is armed)
 
     h.recordTickUnwrapped = (int64_t) std::llround (rawUnwrapped);
     h.recordedTick = e.tick;
@@ -473,11 +491,12 @@ void Transport::process (Project& p, const PerformanceSettings& s, const LiveInp
         if (position >= L - 1.0e-9)
         {
             handleWrap (p, s);
-            if (songEnded)
+            if (endReached)
             {
-                // end of the song: stop on the last step's final bar
-                songEnded = false;
+                // end of the song (or a sequence with loop off): stop
+                endReached = false;
                 stop();
+                position = 0.0;
                 break;
             }
         }

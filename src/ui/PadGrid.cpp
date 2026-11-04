@@ -40,10 +40,10 @@ void PadGrid::press (int i, int velocity)
     switch (ctx.padView)
     {
         case PadView::TrackMute:
-            if (i < kNumTracks)
+            if (pad < kNumTracks) // banks A-D = tracks 1-16 / 17-32 / 33-48 / 49-64
             {
                 ctx.engine.withProject ([&] (Project& p) {
-                    auto& t = p.sequences[(size_t) ctx.engine.getCurrentSequence()].tracks[(size_t) i];
+                    auto& t = p.sequences[(size_t) ctx.engine.getCurrentSequence()].tracks[(size_t) pad];
                     t.mute = ! t.mute;
                 });
                 ctx.changed();
@@ -146,7 +146,8 @@ void PadGrid::timerCallback()
             names[(size_t) i] = n;
             hasSample[(size_t) i] = pd.hasSample();
             padMuted[(size_t) i] = pd.mute;
-            const bool tm = i < kNumTracks && seq.tracks[(size_t) i].mute;
+            const int trackIdx = bank * kPadsPerBank + i;
+            const bool tm = trackIdx < kNumTracks && seq.tracks[(size_t) trackIdx].mute;
             if (tm != trackMuted[(size_t) i])
                 dirty = true;
             trackMuted[(size_t) i] = tm;
@@ -233,9 +234,9 @@ void PadGrid::paint (juce::Graphics& g)
         if (view == PadView::TrackMute)
         {
             ledColour = colours::ledGreen;
-            if (i < kNumTracks)
+            if (pad < kNumTracks)
             {
-                top = "TRACK " + juce::String (i + 1);
+                top = "TRACK " + juce::String (pad + 1);
                 sub = trackMuted[(size_t) i] ? "MUTED" : "ON";
                 led = trackMuted[(size_t) i] ? 0.0f : 1.0f;
             }

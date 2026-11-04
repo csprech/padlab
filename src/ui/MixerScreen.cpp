@@ -105,6 +105,10 @@ public:
             s.mute.onClick = [this, i] { stripChanged (i); };
             s.solo.onClick = [this, i] { stripChanged (i); };
         }
+        setupCombo (trackPage, { "TRACKS 1-16", "TRACKS 17-32", "TRACKS 33-48", "TRACKS 49-64" });
+        trackPage.setSelectedId (1, juce::dontSendNotification);
+        trackPage.onChange = [this] { contextChanged(); };
+        addAndMakeVisible (trackPage);
         addAndMakeVisible (master);
         master.name.setText ("MASTER", juce::dontSendNotification);
         master.pan.setVisible (false);
@@ -126,8 +130,8 @@ public:
             if (s.isVisible() && s.showMeter)
                 o.meters.push_back ({ s.meterArea() + s.getPosition(), s.displayLevel(), true });
         };
-        for (int t = 0; t < kNumTracks; ++t)
-            add (strips[(size_t) t]);
+        for (auto& s : strips)
+            add (s);
         add (master);
     }
 
@@ -144,7 +148,8 @@ public:
             for (int i = 0; i < kPadsPerBank; ++i)
             {
                 auto& s = strips[(size_t) i];
-                const bool vis = pads || i < kNumTracks;
+                const int t = page() * kPadsPerBank + i;
+                const bool vis = pads || t < kNumTracks;
                 s.setVisible (vis);
                 if (! vis)
                     continue;
@@ -163,9 +168,9 @@ public:
                 }
                 else
                 {
-                    const auto& tr = seq.tracks[(size_t) i];
-                    const auto& pr = p.programs[(size_t) tr.programIndex];
-                    s.name.setText (juce::String (i + 1) + " " + tr.name, juce::dontSendNotification);
+                    const auto& tr = seq.tracks[(size_t) t];
+                    const auto& pr = p.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, tr.programIndex)];
+                    s.name.setText (juce::String (t + 1) + " " + tr.name, juce::dontSendNotification);
                     s.name.setTooltip (pr.name);
                     s.fader.setValue (pr.levelDb, juce::dontSendNotification);
                     s.pan.setValue (pr.pan, juce::dontSendNotification);
@@ -184,8 +189,8 @@ public:
     void refresh() override
     {
         if (! padsTab.getToggleState())
-            for (int t = 0; t < kNumTracks; ++t)
-                strips[(size_t) t].setLevel (ctx.engine.getTrackPeak (t));
+            for (int i = 0; i < kPadsPerBank; ++i)
+                strips[(size_t) i].setLevel (ctx.engine.getTrackPeak (page() * kPadsPerBank + i));
         master.setLevel (juce::jmax (ctx.engine.getMasterPeak (0), ctx.engine.getMasterPeak (1)));
     }
 
@@ -196,12 +201,15 @@ public:
         tracksTab.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (4);
         padsTab.setBounds (top.removeFromLeft (90));
-        top.removeFromLeft (12);
+        top.removeFromLeft (8);
+        trackPage.setBounds (top.removeFromLeft (130));
+        trackPage.setVisible (! padsTab.getToggleState());
+        top.removeFromLeft (8);
         title.setBounds (top);
         r.removeFromTop (6);
         master.setBounds (r.removeFromRight (78));
         r.removeFromRight (8);
-        const int n = padsTab.getToggleState() ? kPadsPerBank : kNumTracks;
+        const int n = kPadsPerBank;
         const int w = r.getWidth() / n;
         for (int i = 0; i < n; ++i)
             strips[(size_t) i].setBounds (r.getX() + i * w, r.getY(), w, r.getHeight());
@@ -229,8 +237,8 @@ private:
             }
             else
             {
-                auto& tr = p.sequences[(size_t) seqIdx].tracks[(size_t) i];
-                auto& pr = p.programs[(size_t) tr.programIndex];
+                auto& tr = p.sequences[(size_t) seqIdx].tracks[(size_t) (page() * kPadsPerBank + i)];
+                auto& pr = p.programs[(size_t) juce::jlimit (0, kNumPrograms - 1, tr.programIndex)];
                 pr.levelDb = lvl;
                 pr.pan = pn;
                 tr.mute = m;
@@ -239,6 +247,8 @@ private:
         });
     }
 
+    int page() const { return juce::jlimit (0, kNumTracks / kPadsPerBank - 1, trackPage.getSelectedId() - 1); }
+    juce::ComboBox trackPage;
     juce::TextButton padsTab { "PADS" }, tracksTab { "TRACKS" };
     juce::Label title;
     std::array<Strip, kPadsPerBank> strips;

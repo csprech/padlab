@@ -102,6 +102,11 @@ Press **HELP** on the panel (under the floppy drive) or `?` for the same guides 
 5. **UNDO SEQ** (`Cmd-Z`) takes back the last pass.
 6. Fine-tune individual notes in **STEP EDIT** (F2).
 
+### Play an external synth or drum machine
+1. Choose the MIDI output in **DISK** > Audio / MIDI setup.
+2. On **MAIN**, select a track and set **OUT** to the instrument's MIDI channel. Choose DRUM + MIDI to hear Padlab's sounds as well.
+3. Play the pads and record as usual. Turn on **Send MIDI clock** in OTHER to keep the instrument's tempo in sync too.
+
 ### Make a song
 1. Open **SONG** (F3) and use **ADD STEP**.
 2. For each step, pick a sequence and how many times it repeats.
@@ -114,8 +119,8 @@ Press **HELP** on the panel (under the floppy drive) or `?` for the same guides 
 | Area | What it does |
 |---|---|
 | **Pads** | 4×4 pads, banks A–H (128 pads per program). Mouse: where you hit the pad sets the velocity (top = hardest), dragging while held = pressure, Shift = 127. Drop audio files on a pad to load them (several files fill consecutive pads). WAV, AIFF, FLAC and OGG load directly; **MP3, M4A and AAC are converted to WAV on import** (see below). |
-| **Programs** | 8 drum programs. Each pad has 4 velocity layers plus tune, level, pan, ADSR, an LP/HP/BP filter, mute (choke) groups 1–32, one-shot or note-on triggering, and poly or mono. |
-| **Sequencer** | 16 sequences × 8 tracks, 960 PPQN, 1–64 bars, time signatures from 2/4 to 7/4. Timing Correct from 1/4 to 1/32T with **swing 50–75%**: the second 16th of each 8th is delayed, so 66% gives a triplet feel. Optional **96 PPQN grid** snaps swing to late-80s resolution. |
+| **Programs** | 24 drum programs. Each pad has 4 velocity layers plus tune, level, pan, ADSR, an LP/HP/BP filter, mute (choke) groups 1–32, one-shot or note-on triggering, poly or mono, and **reverb / delay sends**. |
+| **Sequencer** | 99 sequences × 64 tracks, 960 PPQN, 1–999 bars, time signatures from 2/4 to 7/4. **Loop** on/off and **loop to bar** (play an intro once, then loop the groove). The track strip on MAIN pages through the 64 tracks 8 at a time, and the note grid pages along with the playhead on long sequences. Timing Correct from 1/4 to 1/32T with **swing 50–75%**: the second 16th of each 8th is delayed, so 66% gives a triplet feel. Optional **96 PPQN grid** snaps swing to late-80s resolution. |
 | **Recording** | **REC** replaces the track on the first pass, then auto-switches to overdub. **OVERDUB** merges. Count-in, metronome, and recording plays live hits immediately without double-triggering their quantized copies. Undo is available. |
 | **Performance** | **Note Repeat**: hold TAP TEMPO/NOTE REPEAT while holding pads, and they repeat on the swung grid with velocity following pressure. Tap the same key for tap tempo; `N` latches repeat on. **Full Level**. **16 Levels**: the selected pad spread over all 16 pads by velocity, tune, decay, attack or filter (choose in OTHER). **Erase**: hold it plus a pad while playing to delete that pad's notes. **Track Mute / Pad Mute**: pad views. Sequence changes queue at the loop end. |
 | **Note Variation** | The fader varies one parameter of the selected pad (or all pads) as you play: tune (±1 octave), decay (×¼ to ×4), attack (0–500 ms) or filter cutoff (±4 octaves). **AFTER** turns it on; **SHIFT + AFTER** (ASSIGN) picks the parameter. The value is recorded with each note and can be edited in STEP EDIT. MIDI CC 74 moves the fader. |
@@ -125,8 +130,11 @@ Press **HELP** on the panel (under the floppy drive) or `?` for the same guides 
 | **MIDI sync** | **Send MIDI clock** (OTHER) sends 24 PPQN clock, Start / Continue / Stop and Song Position to the MIDI output chosen in DISK > Audio / MIDI setup, so drum machines and DAWs follow Padlab's tempo and transport. Starting mid-sequence sends Song Position, then Continue. |
 | **Sample Edit** | Chop by **Threshold** (spectral-flux transients), **Regions**, **BPM** or **Manual**, then edit the chops by hand in any mode (see "Chop a sample" above). Normalize, reverse, trim, or set a pad to play a single slice. **Convert slices to pads** can also write a sequence that replays the loop and set the tempo from the loop length. |
 | **Sampler** | Record from the audio input or **resample** the master output. Threshold-triggered start, input meters, then keep the recording on a pad (or keep and go straight to chopping). |
-| **Mixer** | Track strips (each track's program level/pan, mute, solo, meters), a pad mixer for the current bank, and a master fader. |
-| **Operating it** | As on the hardware: the **CURSOR** keys (or arrow keys) move a cursor between the fields on the LCD, and brackets mark the current one. You can also click a field. Turn the **DATA** wheel to change it (drag around the wheel, scroll over it, or press `-` / `=`). Or type a number on the **keypad** and press **ENTER**. **OPEN WINDOW** opens the field's full editor. **SHIFT** + a keypad key opens the mode printed under it (1 SONG, 2 STEP, 3 DISK, 4 SAMPLE, 5 TRIM, 6 PROGRAM, 7 MIXER, 8 OTHER, 9 MIDI, 0 MAIN). With no field selected, a keypad key opens its mode directly. The soft keys F1–F6 select MAIN, STEP, SONG, PROGRAM, TRIM and MIXER. |
+| **Mixer** | Track strips 16 at a time (each track's program level/pan, mute, solo, meters), a pad mixer for the current bank, and a master fader. |
+| **Edit** | EDIT on MAIN (or SHIFT + 0): insert blank bars, delete bars, copy bars (several times, into any sequence); copy a sequence or a track; and edit a range of notes (chosen tracks, bars and pads): velocity add / percent / set, move by ticks, shift pads (transpose on MIDI tracks), set length, delete. |
+| **MIDI tracks** | Each track's **OUT** (on MAIN) is DRUM (Padlab's sounds), MIDI channel 1–16 (an external instrument), or DRUM + MIDI (both). Pads send notes 36–51 for bank A, 52–67 for bank B, and so on. Notes go out timestamped to line up with the audio (output latency included). The note grid shows note names on MIDI tracks. |
+| **Effects** | A reverb and a tempo-synced stereo delay (1/4 to 1/32T, damped feedback) on two send buses. Each pad has its own reverb and delay send (PROGRAM); size, damping, delay time, feedback and return levels are in OTHER. |
+| **Operating it** | As on the hardware: the **CURSOR** keys (or arrow keys) move a cursor between the fields on the LCD, and brackets mark the current one. You can also click a field. Turn the **DATA** wheel to change it (drag around the wheel, scroll over it, or press `-` / `=`). Or type a number on the **keypad** and press **ENTER**. **OPEN WINDOW** opens the field's full editor. **SHIFT** + a keypad key opens the mode printed under it (1 SONG, 2 STEP, 3 DISK, 4 SAMPLE, 5 TRIM, 6 PROGRAM, 7 MIXER, 8 OTHER, 9 MIDI, 0 EDIT). With no field selected, a keypad key opens its mode directly. The soft keys F1–F6 select MAIN, STEP, SONG, PROGRAM, TRIM and MIXER. |
 | **Locate** | **STEP < >** moves by the timing-correct step (event by event in STEP EDIT). **BAR << >>** moves by a bar. **GO TO** asks for a bar number on the keypad. |
 | **Levels** | **MAIN VOLUME** sets the output level. **REC GAIN** sets the audio input level when sampling. |
 | **Q-Links** | 4 knobs for the selected pad: tune, cutoff, resonance and decay. MIDI CC 70–73 controls them too. |
@@ -172,7 +180,10 @@ src/core/      platform-neutral engine (unit-tested, no GUI)
   Sampler      64-voice pool, layers, Hermite interpolation, ADSR, TPT state-variable filter, choke groups
   Chop         transient detection (FFT spectral flux + adaptive threshold), regions, BPM
   DrumSynth    procedurally synthesized factory kit + demo break
-  ProjectIO    open project format
+  ProjectIO    open project format (sparse: only used tracks are written)
+  SeqEdit      bar insert / delete / copy, sequence and track copy, event range edits
+  Effects      reverb + tempo-synced delay send buses
+  MidiClock    24 PPQN clock / start / stop / song position from the transport
 src/engine/    Engine: audio/MIDI device I/O, threading, metronome, sampling, preview, undo,
                main volume, rec gain, converter emulation
 src/ui/        hardware-style JUCE UI: MainComponent (panel layout and operation), PanelParts
@@ -184,7 +195,7 @@ tests/         JUCE UnitTest suites for all of core/ (fixtures/: small MP3/M4A f
 - The audio thread never allocates or frees memory.
 - Pad input and transport commands arrive through lock-free FIFOs.
 - The project sits behind a short-held SpinLock. Debug builds assert on accidental nested locking.
-- Event vectors are pre-reserved (4096 per track).
+- Recording never allocates: the track being recorded gets room for 4,096 notes reserved on the message thread (swapped in under the lock). Without room, a hit still plays but isn't recorded.
 - Samples that leave the project are retired, then freed on the message thread once no voice uses them.
 - Save captures state under the lock and writes files outside it.
 
@@ -202,6 +213,6 @@ tests/         JUCE UnitTest suites for all of core/ (fixtures/: small MP3/M4A f
 - Keygroup (chromatic) programs, audio tracks, plugin hosting, per-track insert FX.
 - Time-stretch and warp.
 - Import of other samplers' program formats.
-- MIDI clock in (following an external clock), MIDI learn, MIDI program changes.
+- MIDI clock in (following an external clock), MIDI learn, MIDI program changes, chromatic MIDI-track input from a keyboard.
 - Auto punch in/out points.
 - The Save/Open file dialogs haven't been exercised by automated tests (the save/load code underneath has).

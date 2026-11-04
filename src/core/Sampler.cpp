@@ -120,6 +120,8 @@ void Sampler::trigger (const Program& program, int track, int pad, int velocity,
         const float angle = (pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
         v.gainL = gain * std::cos (angle) * juce::MathConstants<float>::sqrt2;
         v.gainR = gain * std::sin (angle) * juce::MathConstants<float>::sqrt2;
+        v.reverbSend = juce::jlimit (0.0f, 1.0f, p.reverbSend);
+        v.delaySend = juce::jlimit (0.0f, 1.0f, p.delaySend);
 
         // Note Variation (64 = unchanged): decay x0.25..x4, attack 0..500 ms, cutoff +/-4 octaves
         const float vv = (float) var.value;
@@ -189,6 +191,11 @@ void Sampler::render (juce::AudioBuffer<float>& out, int startSample, int numSam
         const float* srcR = buf.getNumChannels() > 1 ? buf.getReadPointer (1) : srcL;
         float* dstL = out.getWritePointer (v.track * 2, startSample);
         float* dstR = out.getWritePointer (v.track * 2 + 1, startSample);
+        const bool sends = out.getNumChannels() >= kMixChannels && (v.reverbSend > 0.0f || v.delaySend > 0.0f);
+        float* revL = sends ? out.getWritePointer (kFxChannelBase + 0, startSample) : nullptr;
+        float* revR = sends ? out.getWritePointer (kFxChannelBase + 1, startSample) : nullptr;
+        float* dlyL = sends ? out.getWritePointer (kFxChannelBase + 2, startSample) : nullptr;
+        float* dlyR = sends ? out.getWritePointer (kFxChannelBase + 3, startSample) : nullptr;
 
         for (int i = 0; i < numSamples; ++i)
         {
@@ -241,8 +248,16 @@ void Sampler::render (juce::AudioBuffer<float>& out, int startSample, int numSam
                 break;
             }
 
-            dstL[i] += l * g * v.gainL;
-            dstR[i] += r * g * v.gainR;
+            const float ol = l * g * v.gainL, orr = r * g * v.gainR;
+            dstL[i] += ol;
+            dstR[i] += orr;
+            if (sends)
+            {
+                revL[i] += ol * v.reverbSend;
+                revR[i] += orr * v.reverbSend;
+                dlyL[i] += ol * v.delaySend;
+                dlyR[i] += orr * v.delaySend;
+            }
         }
 
         if (! v.active)

@@ -6,8 +6,8 @@
 namespace padlab
 {
 enum class PadView { Play, TrackMute, PadMute };
-enum class ScreenMode { Main, Program, SampleEdit, Sampler, Mixer, Song, StepEdit, Other, Help };
-constexpr int kNumScreens = 9;
+enum class ScreenMode { Main, Program, SampleEdit, Sampler, Mixer, Song, StepEdit, Other, Help, Edit };
+constexpr int kNumScreens = 10;
 
 /** UI-wide state shared by all screens. Listeners get a change message whenever it changes. */
 struct AppContext : juce::ChangeBroadcaster

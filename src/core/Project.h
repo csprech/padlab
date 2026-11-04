@@ -11,6 +11,7 @@
 // reads and (while recording) writes events under that lock.
 
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <vector>
@@ -22,12 +23,19 @@ constexpr int kPadsPerBank   = 16;
 constexpr int kNumBanks      = 8;
 constexpr int kNumPads       = kPadsPerBank * kNumBanks; // 128
 constexpr int kNumLayers     = 4;
-constexpr int kNumTracks     = 8;
-constexpr int kNumSequences  = 16;
+constexpr int kNumTracks     = 64;  // per sequence
+constexpr int kNumSequences  = 99;
+constexpr int kNumPrograms   = 24;
+constexpr int kMaxBars       = 999;
 constexpr int kMaxVoices     = 64;
 constexpr int kNumSongs      = 8;
 constexpr int kMaxSongSteps  = 99;
-constexpr int kEventCapacity = 4096;  // per track; pre-reserved so the audio thread never reallocates
+constexpr int kEventCapacity = 4096;  // per track; reserved for the track being recorded so the audio thread never allocates
+
+// The sampler renders into one buffer: a stereo pair per track, then the two FX send buses.
+constexpr int kNumFxBuses    = 2;     // 0 = reverb, 1 = delay
+constexpr int kFxChannelBase = kNumTracks * 2;
+constexpr int kMixChannels   = kNumTracks * 2 + kNumFxBuses * 2;
 
 struct Sample
 {
@@ -72,6 +80,8 @@ struct Pad
     TriggerMode trigger = TriggerMode::OneShot;
     PolyMode poly = PolyMode::Poly;
     bool mute = false;        // pad mute (pad mixer)
+    float reverbSend = 0.0f;  // 0..1 to the reverb bus
+    float delaySend  = 0.0f;  // 0..1 to the delay bus
 
     bool hasSample() const;
 };
@@ -114,15 +124,21 @@ struct Track
     int programIndex = 0;
     bool mute = false;
     bool solo = false;
+    int midiChannel = 0;        // 0 = no MIDI out, 1..16 = send notes to that channel
+    bool internalSound = true;  // play the program's sounds (off = a pure MIDI track)
     std::vector<NoteEvent> events; // kept sorted by tick
 
-    Track();
-    Track(const Track&);
-    Track& operator= (const Track&);
-
-    void insertSorted (const NoteEvent& e); // no-op when the track is full
+    /** UI / file loading: may allocate. No-op when the track is full. */
+    void insertSorted (const NoteEvent& e);
+    /** Audio thread (recording): never allocates; false when there's no reserved room. */
+    bool insertSortedNoAlloc (const NoteEvent& e);
     bool isFull() const { return events.size() >= (size_t) kEventCapacity; }
+    bool canRecord() const { return events.size() < events.capacity() && ! isFull(); }
+    bool sendsMidi() const { return midiChannel >= 1 && midiChannel <= 16; }
 };
+
+/** MIDI note a pad sends on MIDI tracks: bank A pads 1-16 = notes 36-51, bank B 52-67... */
+inline int padToMidiNote (int pad) { return std::clamp (36 + pad, 0, 127); }
 
 struct Sequence
 {
@@ -130,9 +146,13 @@ struct Sequence
     double bpm = 90.0;
     int bars = 2;
     int beatsPerBar = 4;
+    bool loop = true;       // off: play once and stop
+    int loopToBar = 0;      // 0-based bar the loop jumps back to
     std::array<Track, kNumTracks> tracks;
 
     int64_t getLengthTicks() const { return (int64_t) bars * beatsPerBar * kPPQN; }
+    int64_t getBarTicks() const { return (int64_t) beatsPerBar * kPPQN; }
+    int64_t getLoopStartTicks() const { return std::clamp<int64_t> ((int64_t) loopToBar * getBarTicks(), 0, getLengthTicks() - getBarTicks()); }
     bool anySolo() const;
 };
 
@@ -155,15 +175,24 @@ struct Song
     void removeStep (int index);
 };
 
+/** Reverb + tempo-synced delay on the two send buses. */
+struct FxSettings
+{
+    float reverbSize = 0.55f, reverbDamping = 0.45f, reverbReturnDb = -4.0f;
+    int delayDivision = 1;     // index into timing::divisions() (1/8 by default)
+    float delayFeedback = 0.35f, delayReturnDb = -6.0f;
+};
+
 struct Project
 {
     juce::String name = "Untitled";
     std::vector<SamplePtr> samplePool;
-    std::array<Program, kNumTracks> programs;
+    std::array<Program, kNumPrograms> programs;
     std::array<Sequence, kNumSequences> sequences;
     std::array<Song, kNumSongs> songs;
     float masterLevelDb = 0.0f;
     int vintageMode = 0; // 0 clean, 1 = 12-bit 40 kHz character, 2 = 16-bit warm converter character
+    FxSettings fx;
 
     Project();
     SamplePtr findSample (const juce::String& name) const;

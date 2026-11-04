@@ -20,6 +20,8 @@ set(PADLAB_CORE_SOURCES
   src/core/SampleOps.cpp
   src/core/ProjectIO.cpp
   src/core/Project.cpp
+  src/core/SeqEdit.cpp
+  src/core/Effects.cpp
 )
 
 set(PADLAB_JUCE_DEFS
@@ -59,6 +61,7 @@ target_sources(Padlab PRIVATE
   src/ui/MixerScreen.cpp
   src/ui/ExtraScreens.cpp
   src/ui/HelpScreen.cpp
+  src/ui/EditScreen.cpp
   src/ui/MainComponent.cpp
   src/Main.cpp)
 
@@ -91,7 +94,8 @@ target_sources(PadlabTests PRIVATE
   tests/ChopTests.cpp
   tests/ProjectIOTests.cpp
   tests/SampleOpsTests.cpp
-  tests/MidiClockTests.cpp)
+  tests/MidiClockTests.cpp
+  tests/SeqEditTests.cpp)
 target_include_directories(PadlabTests PRIVATE src)
 target_compile_definitions(PadlabTests PRIVATE ${PADLAB_JUCE_DEFS}
   PADLAB_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")

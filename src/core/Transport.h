@@ -160,7 +160,9 @@ private:
     uint32_t passCount = 0;
     bool countInPending = false;
     bool pendingFlagClear = false;
-    bool playingSong = false, songEnded = false;
+    bool playingSong = false, endReached = false;
+    double prevUnwrappedBase = -1.0e12; // unwrappedBase of the previous pass (hits that land just before a wrap)
+    double passStartLocal = 0.0;        // local tick the current pass started at (0 or the loop-to bar)
     double playStartTick = 0.0;
     int songIndex = 0, songStep = 0, songRepeat = 0;
     std::array<HeldPad, kNumPads> held {};

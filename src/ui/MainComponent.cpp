@@ -21,7 +21,7 @@ const char* kSoftKeyLabels[6] = { "MAIN", "STEP", "SONG", "PROGRAM", "TRIM", "MI
 
 // keypad layout (top-left first) and what SHIFT + key opens, printed under each key
 constexpr int kKeypadOrder[12] = { 7, 8, 9, 4, 5, 6, 1, 2, 3, 10, 0, 11 };
-const char* kKeypadModes[10] = { "MAIN", "SONG", "STEP", "DISK", "SAMPLE", "TRIM", "PROGRAM", "MIXER", "OTHER", "MIDI" };
+const char* kKeypadModes[10] = { "EDIT", "SONG", "STEP", "DISK", "SAMPLE", "TRIM", "PROGRAM", "MIXER", "OTHER", "MIDI" };
 
 } // namespace
 
@@ -44,6 +44,7 @@ MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
     screens[(size_t) ScreenMode::StepEdit] = createStepEditScreen (ctx);
     screens[(size_t) ScreenMode::Other] = createOtherScreen (ctx);
     screens[(size_t) ScreenMode::Help] = createHelpScreen (ctx);
+    screens[(size_t) ScreenMode::Edit] = createEditScreen (ctx);
     for (auto& s : screens)
     {
         s->setLookAndFeel (&lcdLnf);
@@ -1205,7 +1206,7 @@ void MainComponent::keypadPressed (int key)
         cancelEntry();
         switch (key)
         {
-            case 0: showScreen (ScreenMode::Main); break;
+            case 0: showScreen (ScreenMode::Edit); break;
             case 1: showScreen (ScreenMode::Song); break;
             case 2: showScreen (ScreenMode::StepEdit); break;
             case 3: showDiskMenu(); break;
