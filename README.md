@@ -241,3 +241,12 @@ Padlab also runs inside [Tabletop](https://github.com/csprech/tabletop), a studi
 - `padlab-module.cmake` lists the sources a host compiles; this app builds from the same lists.
 - `src/plugin/PadlabProcessor` wraps the engine and the panel as a JUCE audio processor. Its jacks become the processor's audio and MIDI buses: REC IN L/R, STEREO OUT L/R, MIDI IN and MIDI OUT; its state is the whole project, samples and all.
 - In hosted mode the engine opens no audio or MIDI device of its own: the host feeds it audio and MIDI a block at a time.
+
+## A GPUI version (experimental)
+
+The [`gpui` branch](https://github.com/csprech/padlab/tree/gpui) has Padlab with a [GPUI](https://gpui.rs) front end.
+- The C++ engine and panel stay the same. They sit behind a small C interface.
+- A Rust app draws the panel on the GPU and sends it the mouse and keyboard.
+- Its own README, `gpui/README.md` on that branch, explains how it's built, run and tested.
+
+This branch (`main`) stays the JUCE app.
