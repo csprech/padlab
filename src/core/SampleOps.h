@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/Project.h"
+#include "Project.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 namespace padlab::sampleops

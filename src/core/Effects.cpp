@@ -1,5 +1,5 @@
-#include "core/Effects.h"
-#include "core/Timing.h"
+#include "Effects.h"
+#include "Timing.h"
 
 namespace padlab
 {

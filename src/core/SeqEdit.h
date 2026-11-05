@@ -3,7 +3,7 @@
 // Sequence editing (the EDIT functions of classic sequencers): insert / delete / copy bars,
 // copy sequences and tracks, and edit a range of events. Bars are 0-based here.
 
-#include "core/Project.h"
+#include "Project.h"
 
 namespace padlab::seqedit
 {

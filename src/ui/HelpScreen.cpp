@@ -1,7 +1,7 @@
 // HELP: how-to topics, shown on the LCD. Opened with the HELP key or "?", on the topic for the
 // screen you came from. Up/Down pick a topic, PageUp/PageDown (or the wheel) scroll, Esc goes back.
 
-#include "ui/Screens.h"
+#include "Screens.h"
 
 namespace padlab
 {

@@ -1,4 +1,4 @@
-#include "core/Transport.h"
+#include "../src/core/Transport.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;

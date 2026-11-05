@@ -1,5 +1,5 @@
-#include "core/DrumSynth.h"
-#include "core/SampleOps.h"
+#include "DrumSynth.h"
+#include "SampleOps.h"
 #include <cmath>
 #include <functional>
 

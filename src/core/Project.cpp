@@ -1,4 +1,4 @@
-#include "core/Project.h"
+#include "Project.h"
 #include <algorithm>
 
 namespace padlab

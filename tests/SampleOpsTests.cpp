@@ -1,5 +1,5 @@
-#include "core/SampleOps.h"
-#include "core/Sampler.h"
+#include "../src/core/SampleOps.h"
+#include "../src/core/Sampler.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;

@@ -1,8 +1,8 @@
-#include "ui/MainComponent.h"
-#include "core/DrumSynth.h"
-#include "core/ProjectIO.h"
-#include "core/Timing.h"
-#include "ui/Materials.h"
+#include "MainComponent.h"
+#include "../core/DrumSynth.h"
+#include "../core/ProjectIO.h"
+#include "../core/Timing.h"
+#include "Materials.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
 namespace padlab
@@ -28,7 +28,8 @@ const char* kKeypadModes[10] = { "EDIT", "SONG", "STEP", "DISK", "SAMPLE", "TRIM
 MainComponent::MainComponent (Engine& e) : engine (e), ctx (e), pads (ctx)
 {
     setLookAndFeel (&lnf);
-    juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
+    if (! engine.isHosted()) // (in a studio the host owns the default look; ours stays on this panel)
+        juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
     setWantsKeyboardFocus (true);
 
     ctx.addChangeListener (this);
@@ -393,7 +394,8 @@ MainComponent::~MainComponent()
     ctx.removeChangeListener (this);
     engine.onQLinkMidi = nullptr;
     engine.onMidiDeviceMessage = nullptr;
-    juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+    if (! engine.isHosted())
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
@@ -1540,6 +1542,11 @@ void MainComponent::saveProject (bool saveAs)
 
 void MainComponent::showAudioSettings()
 {
+    if (engine.isHosted())
+    {
+        flash ("In the studio: cable REC IN, STEREO OUT and MIDI to the audio interface");
+        return;
+    }
     auto* selector = new juce::AudioDeviceSelectorComponent (engine.getDeviceManager(), 0, 2, 2, 2, true, true, true, false);
     selector->setSize (520, 460);
     juce::DialogWindow::LaunchOptions o;

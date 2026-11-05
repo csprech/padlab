@@ -2,7 +2,7 @@
 
 // Open project format: a folder "<Name>.padlab/" containing project.json and samples/*.wav.
 
-#include "core/Project.h"
+#include "Project.h"
 #include <map>
 
 namespace padlab::projectio

@@ -1,4 +1,4 @@
-#include "core/MidiClock.h"
+#include "../src/core/MidiClock.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;

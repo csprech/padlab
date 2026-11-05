@@ -1,6 +1,6 @@
-#include "core/Effects.h"
-#include "core/Sampler.h"
-#include "core/SeqEdit.h"
+#include "../src/core/Effects.h"
+#include "../src/core/Sampler.h"
+#include "../src/core/SeqEdit.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;

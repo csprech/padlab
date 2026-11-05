@@ -1,6 +1,6 @@
 #pragma once
 
-#include "engine/Engine.h"
+#include "../engine/Engine.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace padlab

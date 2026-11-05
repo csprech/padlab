@@ -1,4 +1,4 @@
-#include "core/Timing.h"
+#include "../src/core/Timing.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab::timing;

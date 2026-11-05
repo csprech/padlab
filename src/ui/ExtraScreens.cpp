@@ -1,7 +1,7 @@
 // SONG, STEP EDIT and OTHER screens.
 
-#include "ui/Screens.h"
-#include "core/Timing.h"
+#include "Screens.h"
+#include "../core/Timing.h"
 
 namespace padlab
 {

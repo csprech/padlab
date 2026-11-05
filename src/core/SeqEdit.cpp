@@ -1,4 +1,4 @@
-#include "core/SeqEdit.h"
+#include "SeqEdit.h"
 #include <algorithm>
 
 namespace padlab::seqedit

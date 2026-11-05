@@ -10,11 +10,11 @@
 //  * Samples removed from the project are "retired" and only freed on the message
 //    thread once no voice references them, so the audio thread never frees memory.
 
-#include "core/Effects.h"
-#include "core/MidiClock.h"
-#include "core/Project.h"
-#include "core/Sampler.h"
-#include "core/Transport.h"
+#include "../core/Effects.h"
+#include "../core/MidiClock.h"
+#include "../core/Project.h"
+#include "../core/Sampler.h"
+#include "../core/Transport.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_events/juce_events.h>
 #include <functional>
@@ -26,8 +26,18 @@ class Engine : public juce::AudioIODeviceCallback,
                private juce::Timer
 {
 public:
-    Engine();
+    /** Standalone, the engine opens the audio device and the MIDI ports itself. Hosted (inside a studio or a
+        plug-in host), it opens nothing: the host calls prepareHosted() and processHosted(). */
+    explicit Engine (bool hosted = false);
     ~Engine() override;
+    bool isHosted() const { return hosted; }
+
+    /** Hosted: the sample rate and the largest block to expect. */
+    void prepareHosted (double sampleRate, int maxBlockSize);
+    /** Hosted: one block. `in` is the REC IN jack (stereo; heard when the input is switched on), `out` the
+        STEREO OUT. `midi` brings what arrives at the MIDI IN jack and returns what goes out of MIDI OUT
+        (tracks sent to MIDI, and clock when it's on), each at its place in the block. */
+    void processHosted (const float* const* in, int numIn, float* const* out, int numOut, int numSamples, juce::MidiBuffer& midi);
 
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     void setInputEnabled (bool enabled);
@@ -156,6 +166,16 @@ private:
 
     void audioDeviceIOCallbackWithContext (const float* const* inputs, int numIn, float* const* outputs, int numOut,
                                            int numSamples, const juce::AudioIODeviceCallbackContext&) override;
+    void prepare (double sr, int blockSize, int latencySamples);
+    void render (const float* const* inputs, int numIn, float* const* outputs, int numOut, int numSamples);
+    const bool hosted;
+    std::atomic<bool> hostedInput { false };
+    juce::MidiBuffer* hostMidiOut = nullptr; // audio thread, during processHosted
+    int blockSize = 0;
+    MidiClock hostClock;
+    std::vector<MidiClock::Event> hostClockEvents;
+    double hostTicks = 0.0;
+    bool hostClockActive = false;
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override;
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;

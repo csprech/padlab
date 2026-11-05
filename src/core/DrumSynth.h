@@ -2,7 +2,7 @@
 
 // Original factory content, synthesized at startup (no third-party samples).
 
-#include "core/Project.h"
+#include "Project.h"
 
 namespace padlab::drumsynth
 {

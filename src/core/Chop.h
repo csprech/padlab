@@ -3,7 +3,7 @@
 // Chop: split a sample into slices. Every function returns sorted slice *start*
 // frames beginning with 0; a slice ends where the next begins (last ends at sample end).
 
-#include "core/Project.h"
+#include "Project.h"
 #include <vector>
 
 namespace padlab::chop

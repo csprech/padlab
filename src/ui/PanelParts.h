@@ -3,7 +3,7 @@
 // Small hardware parts of the front panel: the CURSOR pad, the soft-key labels on the LCD,
 // the floppy drive bay and the pad-bank LEDs.
 
-#include "ui/Theme.h"
+#include "Theme.h"
 
 namespace padlab
 {

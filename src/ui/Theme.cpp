@@ -1,6 +1,6 @@
-#include "ui/Theme.h"
-#include "BinaryData.h"
-#include "ui/Materials.h"
+#include "Theme.h"
+#include "PadlabBinaryData.h"
+#include "Materials.h"
 #include <map>
 
 namespace padlab::theme
@@ -9,8 +9,8 @@ namespace padlab::theme
 
 juce::Font screenFont (float height, bool)
 {
-    static juce::Typeface::Ptr vt = juce::Typeface::createSystemTypefaceFor (BinaryData::VT323Regular_ttf,
-                                                                            (size_t) BinaryData::VT323Regular_ttfSize);
+    static juce::Typeface::Ptr vt = juce::Typeface::createSystemTypefaceFor (PadlabBinaryData::VT323Regular_ttf,
+                                                                            (size_t) PadlabBinaryData::VT323Regular_ttfSize);
     return juce::Font (juce::FontOptions (vt).withHeight (height * 1.32f));
 }
 

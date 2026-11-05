@@ -5,8 +5,8 @@
 // into a list of sample-accurate Actions for the sampler, while recording,
 // erasing, looping, counting in and switching sequences.
 
-#include "core/Project.h"
-#include "core/Timing.h"
+#include "Project.h"
+#include "Timing.h"
 
 namespace padlab
 {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ui/AppContext.h"
-#include "ui/Theme.h"
+#include "AppContext.h"
+#include "Theme.h"
 
 namespace padlab
 {

@@ -1,4 +1,4 @@
-#include "core/Sampler.h"
+#include "Sampler.h"
 #include <cmath>
 
 namespace padlab

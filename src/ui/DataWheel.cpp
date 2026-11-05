@@ -1,5 +1,5 @@
-#include "ui/DataWheel.h"
-#include "ui/Materials.h"
+#include "DataWheel.h"
+#include "Materials.h"
 #include <cmath>
 
 namespace padlab

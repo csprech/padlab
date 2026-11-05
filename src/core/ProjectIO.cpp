@@ -1,5 +1,5 @@
-#include "core/ProjectIO.h"
-#include "core/SampleOps.h"
+#include "ProjectIO.h"
+#include "SampleOps.h"
 #include <map>
 
 namespace padlab::projectio

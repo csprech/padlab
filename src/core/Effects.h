@@ -3,7 +3,7 @@
 // The two send effects: a reverb and a tempo-synced stereo delay with damped feedback.
 // Allocation-free after prepare(); runs on the audio thread.
 
-#include "core/Project.h"
+#include "Project.h"
 
 namespace padlab
 {

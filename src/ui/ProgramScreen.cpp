@@ -1,5 +1,5 @@
-#include "ui/Screens.h"
-#include "core/SampleOps.h"
+#include "Screens.h"
+#include "../core/SampleOps.h"
 
 namespace padlab
 {

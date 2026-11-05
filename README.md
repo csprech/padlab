@@ -234,3 +234,10 @@ tests/         JUCE UnitTest suites for all of core/ (fixtures/: small MP3/M4A f
 - MIDI clock in (following an external clock), MIDI learn (remapping controller pads and knobs), transport control from a controller, MIDI program changes, chromatic MIDI-track input from a keyboard.
 - Auto punch in/out points.
 - The Save/Open file dialogs haven't been exercised by automated tests (the save/load code underneath has).
+
+## In the Tabletop studio
+
+Padlab also runs inside [Tabletop](https://github.com/csprech/tabletop), a studio where devices sit on a wooden table and you cable them together.
+- `padlab-module.cmake` lists the sources a host compiles; this app builds from the same lists.
+- `src/plugin/PadlabProcessor` wraps the engine and the panel as a JUCE audio processor. Its jacks become the processor's audio and MIDI buses: REC IN L/R, STEREO OUT L/R, MIDI IN and MIDI OUT; its state is the whole project, samples and all.
+- In hosted mode the engine opens no audio or MIDI device of its own: the host feeds it audio and MIDI a block at a time.

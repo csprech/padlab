@@ -1,5 +1,5 @@
-#include "core/DrumSynth.h"
-#include "core/ProjectIO.h"
+#include "../src/core/DrumSynth.h"
+#include "../src/core/ProjectIO.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;

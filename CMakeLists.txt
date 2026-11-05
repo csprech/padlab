@@ -10,19 +10,9 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/JUCE/CMakeLists.txt")
 endif()
 add_subdirectory(external/JUCE)
 
-# Core engine sources: compiled into both the app and the test runner.
-set(PADLAB_CORE_SOURCES
-  src/core/Timing.cpp
-  src/core/Transport.cpp
-  src/core/Sampler.cpp
-  src/core/DrumSynth.cpp
-  src/core/Chop.cpp
-  src/core/SampleOps.cpp
-  src/core/ProjectIO.cpp
-  src/core/Project.cpp
-  src/core/SeqEdit.cpp
-  src/core/Effects.cpp
-)
+# The source lists (the core, the engine and panel, the processor for hosts) live in padlab-module.cmake, so
+# the Tabletop studio compiles exactly what the app does.
+include(padlab-module.cmake)
 
 set(PADLAB_JUCE_DEFS
   JUCE_WEB_BROWSER=0
@@ -36,8 +26,6 @@ option(PADLAB_BUILD_APP "Build the GUI app" ON)
 
 # ---------------------------------------------------------------- app
 if(PADLAB_BUILD_APP)
-juce_add_binary_data(PadlabAssets SOURCES assets/fonts/VT323-Regular.ttf)
-
 juce_add_gui_app(Padlab
   PRODUCT_NAME "Padlab"
   COMPANY_NAME "Padlab Research"
@@ -46,24 +34,9 @@ juce_add_gui_app(Padlab
   MICROPHONE_PERMISSION_TEXT "Padlab needs audio input to record samples.")
 
 target_sources(Padlab PRIVATE
-  ${PADLAB_CORE_SOURCES}
-  src/engine/Engine.cpp
-  src/ui/Theme.cpp
-  src/ui/Materials.cpp
-  src/ui/DataWheel.cpp
-  src/ui/PanelParts.cpp
-  src/ui/PadGrid.cpp
-  src/ui/Screens.cpp
-  src/ui/MainScreen.cpp
-  src/ui/ProgramScreen.cpp
-  src/ui/SampleScreen.cpp
-  src/ui/SamplerScreen.cpp
-  src/ui/MixerScreen.cpp
-  src/ui/ExtraScreens.cpp
-  src/ui/HelpScreen.cpp
-  src/ui/EditScreen.cpp
-  src/ui/MainComponent.cpp
+  ${PADLAB_MODULE_SOURCES}
   src/Main.cpp)
+padlab_add_assets(Padlab)
 
 target_include_directories(Padlab PRIVATE src)
 target_compile_definitions(Padlab PRIVATE ${PADLAB_JUCE_DEFS}
@@ -71,8 +44,8 @@ target_compile_definitions(Padlab PRIVATE ${PADLAB_JUCE_DEFS}
   JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Padlab,JUCE_VERSION>")
 
 target_link_libraries(Padlab PRIVATE
-  PadlabAssets
   juce::juce_audio_utils
+  juce::juce_audio_processors
   juce::juce_audio_devices
   juce::juce_audio_formats
   juce::juce_dsp

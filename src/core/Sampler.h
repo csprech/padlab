@@ -4,7 +4,7 @@
 // velocity layers, per-pad tune/level/pan, ADSR, state-variable filter, mono mode
 // and mute (choke) groups. Allocation-free after prepare().
 
-#include "core/Project.h"
+#include "Project.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 
 namespace padlab

@@ -1,6 +1,6 @@
-#include "core/Chop.h"
-#include "core/DrumSynth.h"
-#include "core/Sampler.h"
+#include "../src/core/Chop.h"
+#include "../src/core/DrumSynth.h"
+#include "../src/core/Sampler.h"
 #include <juce_core/juce_core.h>
 
 using namespace padlab;

@@ -1,5 +1,5 @@
-#include "engine/Engine.h"
-#include "core/DrumSynth.h"
+#include "Engine.h"
+#include "../core/DrumSynth.h"
 #include <cmath>
 
 namespace padlab
@@ -18,10 +18,16 @@ namespace
     }
 }
 
-Engine::Engine()
+Engine::Engine (bool isHosted) : hosted (isHosted)
 {
     project = std::make_unique<Project>();
     drumsynth::loadFactoryProject (*project);
+    if (hosted)
+    {
+        hostClockEvents.reserve (256);
+        startTimer (100); // recording room, freeing samples
+        return; // the host brings the audio and the MIDI
+    }
 
     deviceManager.initialiseWithDefaultDevices (0, 2);
     deviceManager.addAudioCallback (this);
@@ -49,9 +55,11 @@ Engine::Engine()
 
 Engine::~Engine()
 {
+    stopTimer();
+    if (hosted)
+        return;
     clockSender->stopTimer();
     clockSender.reset();
-    stopTimer();
     midiDeviceListConnection.reset();
     deviceManager.removeAudioCallback (this);
     deviceManager.removeMidiInputDeviceCallback ({}, this);
@@ -97,6 +105,11 @@ juce::StringArray Engine::getActiveMidiInputNames() const
 
 void Engine::setInputEnabled (bool enabled)
 {
+    if (hosted)
+    {
+        hostedInput = enabled; // hosted, the input is the REC IN jack
+        return;
+    }
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.useDefaultInputChannels = false;
     setup.inputChannels.clear();
@@ -107,6 +120,8 @@ void Engine::setInputEnabled (bool enabled)
 
 bool Engine::isInputEnabled() const
 {
+    if (hosted)
+        return hostedInput.load();
     if (auto* d = deviceManager.getCurrentAudioDevice())
         return d->getActiveInputChannels().countNumberOfSetBits() > 0;
     return false;
@@ -140,6 +155,11 @@ void Engine::retire (SamplePtr s)
 
 void Engine::queueMidi (int offset, uint8_t status, uint8_t d1, uint8_t d2)
 {
+    if (hostMidiOut != nullptr)
+    {
+        hostMidiOut->addEvent (juce::MidiMessage ((int) status, (int) d1, (int) d2), juce::jlimit (0, juce::jmax (0, blockSize - 1), offset));
+        return; // hosted: straight out of the MIDI OUT jack, at its sample
+    }
     MidiOut m;
     m.timeMs = blockStartMs + blockLatencyMs + offset / sampleRate.load() * 1000.0;
     m.bytes[0] = status;
@@ -253,6 +273,8 @@ void Engine::ClockSender::hiResTimerCallback()
 
 juce::String Engine::getMidiClockOutputName() const
 {
+    if (hosted)
+        return "the MIDI OUT jack";
     const juce::ScopedLock sl (clockOutLock);
     return clockOut != nullptr ? clockOut->getName() : juce::String();
 }
@@ -268,7 +290,7 @@ void Engine::timerCallback()
     }
 
     // follow the MIDI output chosen in Audio/MIDI setup (opened here, used by the clock thread)
-    const auto id = deviceManager.getDefaultMidiOutputIdentifier();
+    const auto id = hosted ? clockOutId : deviceManager.getDefaultMidiOutputIdentifier();
     if (id != clockOutId)
     {
         auto out = id.isNotEmpty() ? juce::MidiOutput::openDevice (id) : nullptr;
@@ -501,13 +523,49 @@ SamplePtr Engine::takeSampledAudio (const juce::String& name)
 
 void Engine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
+    prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(), device->getOutputLatencyInSamples());
+}
+
+void Engine::prepareHosted (double sr, int maxBlock) { prepare (sr, maxBlock, 0); }
+
+void Engine::processHosted (const float* const* in, int numIn, float* const* out, int numOut, int numSamples, juce::MidiBuffer& midi)
+{
+    // the MIDI IN jack: the same mapping as a controller's (pads, Q-Links)
+    for (const auto meta : midi)
+        handleIncomingMidiMessage (nullptr, meta.getMessage());
+    juce::MidiBuffer sent;
+    hostMidiOut = &sent;
+    blockSize = numSamples;
+    const double ticksBefore = hostTicks;
+    render (in, hostedInput.load() ? numIn : 0, out, numOut, numSamples);
+    // MIDI clock, spread across the block from where the transport was to where it is now
+    const double ticksAfter = uiRunningTicks.load();
+    const bool want = sendMidiClock.load();
+    const bool playing = want && uiState.load() != (int) Transport::State::Stopped && uiState.load() != (int) Transport::State::CountIn;
+    if (want || hostClockActive)
+        for (int k = 0; k < numSamples; k += 16)
+        {
+            hostClockEvents.clear();
+            const double t = ticksBefore + (ticksAfter - ticksBefore) * juce::jmin (1.0, (k + 16) / (double) numSamples);
+            hostClock.update (playing, t, uiPlayStartTick.load(), hostClockEvents);
+            for (auto& e : hostClockEvents)
+                sent.addEvent (e.type == MidiClock::Msg::SongPosition ? juce::MidiMessage::songPositionPointer (e.songPosition) : juce::MidiMessage ((int) e.type), k);
+        }
+    hostClockActive = playing;
+    hostTicks = ticksAfter;
+    hostMidiOut = nullptr;
+    midi.swapWith (sent);
+}
+
+void Engine::prepare (double sr, int block, int latencySamples)
+{
     const juce::SpinLock::ScopedLockType sl (lock);
-    sampleRate = device->getCurrentSampleRate();
+    sampleRate = sr;
     transport.prepare (sampleRate);
     sampler.prepare (sampleRate);
-    trackBuffers.setSize (kMixChannels, std::max (4096, device->getCurrentBufferSizeSamples() * 2));
+    trackBuffers.setSize (kMixChannels, std::max (4096, block * 2));
     effects.prepare (sampleRate);
-    uiOutputLatencyMs = (device->getOutputLatencyInSamples() + device->getCurrentBufferSizeSamples()) / sampleRate * 1000.0;
+    uiOutputLatencyMs = (latencySamples + block) / sampleRate * 1000.0;
     clickLength = (int) (0.03 * sampleRate);
     if (recBuffer.getNumSamples() == 0)
         recBuffer.setSize (2, (int) (30.0 * sampleRate));
@@ -530,6 +588,11 @@ void Engine::renderClick (float* l, float* r, int start, int num)
 
 void Engine::audioDeviceIOCallbackWithContext (const float* const* inputs, int numIn, float* const* outputs,
                                                int numOut, int numSamples, const juce::AudioIODeviceCallbackContext&)
+{
+    render (inputs, numIn, outputs, numOut, numSamples);
+}
+
+void Engine::render (const float* const* inputs, int numIn, float* const* outputs, int numOut, int numSamples)
 {
     for (int c = 0; c < numOut; ++c)
         if (outputs[c] != nullptr)

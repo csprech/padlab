@@ -1,4 +1,4 @@
-#include "core/SampleOps.h"
+#include "SampleOps.h"
 #include <cstring>
 
 namespace padlab::sampleops

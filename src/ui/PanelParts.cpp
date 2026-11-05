@@ -1,6 +1,6 @@
-#include "ui/PanelParts.h"
-#include "ui/Materials.h"
-#include "core/Project.h"
+#include "PanelParts.h"
+#include "Materials.h"
+#include "../core/Project.h"
 
 namespace padlab
 {

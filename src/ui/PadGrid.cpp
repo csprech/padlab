@@ -1,7 +1,7 @@
-#include "ui/PadGrid.h"
-#include "core/SampleOps.h"
-#include "ui/Screens.h"
-#include "ui/Materials.h"
+#include "PadGrid.h"
+#include "../core/SampleOps.h"
+#include "Screens.h"
+#include "Materials.h"
 
 namespace padlab
 {

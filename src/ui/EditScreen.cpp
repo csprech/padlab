@@ -1,8 +1,8 @@
 // EDIT: sequence editing - loop, bars (insert / delete / copy), copy sequence / track, and
 // edits on a range of events (velocity, move, shift pads, length, delete).
 
-#include "ui/Screens.h"
-#include "core/SeqEdit.h"
+#include "Screens.h"
+#include "../core/SeqEdit.h"
 
 namespace padlab
 {

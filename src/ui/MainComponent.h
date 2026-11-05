@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ui/AppContext.h"
-#include "ui/DataWheel.h"
-#include "ui/PadGrid.h"
-#include "ui/PanelParts.h"
-#include "ui/Screens.h"
-#include "ui/Theme.h"
+#include "AppContext.h"
+#include "DataWheel.h"
+#include "PadGrid.h"
+#include "PanelParts.h"
+#include "Screens.h"
+#include "Theme.h"
 
 namespace padlab
 {
