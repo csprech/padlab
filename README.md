@@ -1,5 +1,7 @@
 # Padlab
 
+> **This is the `gpui` branch:** Padlab with a [GPUI](https://gpui.rs) front end (experimental). [`gpui/README.md`](gpui/README.md) explains how it's built, run and tested. The JUCE app described below still builds from this branch. [`main`](https://github.com/csprech/padlab/tree/main) keeps it unchanged.
+
 A desktop sampling groove workstation built for research. It reproduces the workflow and feel of classic pad-based samplers, using an original name, UI and synthesized factory sounds. It doesn't use or contain any third-party firmware, samples or artwork.
 
 C++20 / JUCE 8, macOS (Apple Silicon tested). The core is platform-neutral.
