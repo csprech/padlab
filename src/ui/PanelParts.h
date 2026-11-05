@@ -10,6 +10,8 @@ namespace padlab
 /** Four-way cursor key cluster (a cream rounded block split into up/down/left/right). Auto-repeats. */
 class CursorPad : public juce::Component, private juce::Timer
 {
+    friend struct GpuiAdapter;
+
 public:
     std::function<void (int dx, int dy)> onMove;
 
@@ -28,6 +30,8 @@ private:
 /** The F1..F6 soft-key labels along the bottom of the LCD; the active one is shown inverse. */
 class SoftKeyTabs : public juce::Component
 {
+    friend struct GpuiAdapter;
+
 public:
     SoftKeyTabs() { setInterceptsMouseClicks (false, false); }
     void setLabels (const juce::StringArray& l) { labels = l; repaint(); }
@@ -45,6 +49,8 @@ private:
 /** A 3.5" floppy drive bay on the top panel; click it for the DISK menu. */
 class FloppyDrive : public juce::Component, public juce::SettableTooltipClient
 {
+    friend struct GpuiAdapter;
+
 public:
     std::function<void()> onClick;
     void setBusy (bool b) { if (b != busy) { busy = b; repaint(); } }
@@ -62,6 +68,8 @@ private:
 /** Eight bank LEDs (A-H) in two columns; clicking a letter selects that bank. */
 class BankLeds : public juce::Component
 {
+    friend struct GpuiAdapter;
+
 public:
     std::function<void (int bank)> onSelect;
     void setBank (int b) { if (b != bank) { bank = b; repaint(); } }

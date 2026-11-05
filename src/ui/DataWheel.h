@@ -10,6 +10,8 @@ namespace padlab
 {
 class DataWheel : public juce::Component
 {
+    friend struct GpuiAdapter;
+
 public:
     DataWheel();
 

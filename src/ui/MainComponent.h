@@ -16,7 +16,13 @@ class MainComponent : public juce::Component,
                       public juce::ChangeListener,
                       private juce::Timer
 {
+    friend struct GpuiAdapter; // (the GPUI front end drives this panel off-screen: bridge/PadlabAdapter.cpp)
+
 public:
+    /** Whether a character key is held (the GPUI front end answers this; otherwise the computer's keyboard). */
+    static inline std::function<bool (int)> keyHook;
+    static bool keyIsDown (int c) { return keyHook ? keyHook (c) : juce::KeyPress::isKeyCurrentlyDown (c); }
+
     explicit MainComponent (Engine& engine);
     ~MainComponent() override;
 

@@ -8,6 +8,8 @@ namespace padlab
 /** The 4x4 velocity/pressure pads (pad 1 bottom-left, like the hardware). */
 class PadGrid : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
 {
+    friend struct GpuiAdapter;
+
 public:
     explicit PadGrid (AppContext& ctx);
 

@@ -1452,7 +1452,7 @@ bool MainComponent::keyStateChanged (bool)
     bool handled = false;
     for (int i = 0; i < kPadsPerBank; ++i)
     {
-        const bool down = juce::KeyPress::isKeyCurrentlyDown (kPadKeys[i]);
+        const bool down = keyIsDown (kPadKeys[i]);
         if (down == keyDown[(size_t) i])
             continue;
         keyDown[(size_t) i] = down;

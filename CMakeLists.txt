@@ -56,6 +56,27 @@ target_link_libraries(Padlab PRIVATE
   juce::juce_recommended_warning_flags)
 endif()
 
+# ---------------------------------------------------------------- the GPUI front end's bridge
+# A static library with the instrument (engine, and the JUCE panel used off-screen as controller and renderer)
+# behind the C interface in bridge/PanelBridge.h. gpui/build.rs builds and links it (and PadlabAssets, the font).
+option(PADLAB_BUILD_BRIDGE "Build the bridge for the GPUI front end" OFF)
+if(PADLAB_BUILD_BRIDGE)
+  add_library(padlab_bridge STATIC ${PADLAB_CORE_SOURCES} ${PADLAB_UI_SOURCES} bridge/PanelBridge.cpp bridge/PadlabAdapter.cpp)
+  padlab_add_assets(padlab_bridge)
+  target_include_directories(padlab_bridge PRIVATE src)
+  target_compile_definitions(padlab_bridge PRIVATE ${PADLAB_JUCE_DEFS} JUCE_STANDALONE_APPLICATION=0
+    JUCE_APPLICATION_NAME_STRING="Padlab" JUCE_APPLICATION_VERSION_STRING="${PROJECT_VERSION}")
+  target_link_libraries(padlab_bridge PRIVATE
+    juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_dsp
+    juce::juce_gui_extra
+    PUBLIC
+    juce::juce_recommended_config_flags)
+endif()
+
 # ---------------------------------------------------------------- tests
 juce_add_console_app(PadlabTests PRODUCT_NAME "PadlabTests")
 target_sources(PadlabTests PRIVATE

@@ -133,6 +133,7 @@ public:
     explicit HardButton (const juce::String& text, juce::Colour led = colours::ledRed, Cap cap = Cap::Light);
     void setLit (bool lit);
     bool isLit() const { return lit; }
+    bool isBlinking() const { return blink; }
     void setBlink (bool b) { if (b != blink) { blink = b; repaint(); } }
     void setHasLed (bool b) { hasLed = b; repaint(); }
     void setCap (Cap c) { cap_ = c; repaint(); }
